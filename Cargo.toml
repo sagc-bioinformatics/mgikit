@@ -1,0 +1,25 @@
+[package]
+name = "mgikit"
+version = "0.1.0"
+edition = "2021"
+authors = ["Ziad Al Bkhetan <ziad.albkhetan@gmail.com>"]
+repository = "https://github.com/ziadbkh/"
+readme = "README.md"
+
+
+[dependencies]
+flate2 = "*"
+gzp = { version = "*", default-features = false, features = ["deflate_rust"] }
+combinations = "*"
+itertools = "*"
+argparse = "0.2.2"
+chrono = "0.4"
+termion = "2.0.1"
+
+[dev-dependencies]
+md5 = "0.7.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
