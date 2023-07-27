@@ -40,22 +40,10 @@ mod tests {
     use super::reverse_complement;
     
     #[test]
-    fn test_reverse_complement_1() {
+    fn test_reverse_complement() {
         assert_eq!(reverse_complement(&String::from("ACGTGCGC")).unwrap(), "GCGCACGT");
-    }
-
-    #[test]
-    fn test_reverse_complement_2() {
         assert_eq!(reverse_complement(&String::from("GGGGGGGG")).unwrap(), "CCCCCCCC");
-    }
-
-    #[test]
-    fn test_reverse_complement_3() {
         assert_eq!(reverse_complement(&String::from("ATATATNN")).unwrap(), "NNATATAT");
-    }
-
-    #[test]
-    fn test_reverse_complement_4() {
         assert_eq!(reverse_complement(&String::from("agcagccc")).unwrap(), "GGGCTGCT");
     }
 }

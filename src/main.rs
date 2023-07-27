@@ -9,14 +9,22 @@ use std::collections::HashMap;
 use std::str;
 use chrono;
 use argparse::{ArgumentParser, Store, StoreTrue, ParseList};
-
 use mgikit::*;
 use termion::terminal_size;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_logo(){
-    let (width, _) = terminal_size().unwrap();
+    //let (width, _) = terminal_size().unwrap();
+    let (width, _) = match terminal_size() {
+        Ok(value) => {
+            value
+        }
+        Err(_) => {
+            (80, 0)
+        }
+    };
+    //let width = 80;
     if width > 43{
         //println!("Terminal size: {} columns x {} rows", width, height);
         println! ("\n{}███╗░░░███╗░██████╗░██╗██╗░░██╗██╗████████╗", " ".repeat((width - 43) as usize / 2));
@@ -72,6 +80,12 @@ fn main() {
     let mut arg_force = false;
     let mut arg_report_limit: usize = 50;
 
+    let mut arg_barcode_length: usize = 0;
+    let mut arg_testing_reads: usize = 5000;
+    let mut arg_popular_template: bool = false;
+    let mut arg_no_umi: bool = false;
+    let mut arg_max_umi_length: usize = 10;
+    
     //QC reports
     let mut arg_qc_report_path : Vec<String> = Vec::new();
     
@@ -166,6 +180,15 @@ fn main() {
         "report_limit",
         "The number of barcodes to be reported in the list of undetermined and ambiguous barcodes for short/multiqc report. 50 barcodes is the default.",
     );
+    help_messages.insert("barcode_length", "The barcode length to detect the template. Default is the length difference between R2 and R1.");
+    
+    let testing_reads_msg: String = format!("The number of reads used to detect the barcode. Default is {}", arg_testing_reads);
+    
+    help_messages.insert("testing_reads", &testing_reads_msg);
+    help_messages.insert("no_umi", "Don't extract UMI from the read barcode. Default is false.");
+    help_messages.insert("popular_template", "Use the most frequest template for all samples even if some of them have more matches with other template. Default is true.");
+    help_messages.insert("max_umi_length", "The maximum expected UMI length. Default is 10.");
+    
     help_messages.insert("", "");
 
     {
@@ -320,13 +343,41 @@ fn main() {
             Store,
             help_messages.get("report_limit").unwrap(),
         );
-        /*ap.refer(&mut arg_barcode_length).add_option(
+        ap.refer(&mut arg_barcode_length).add_option(
             &["--barcode-length"],
             Store,
-            help_messages.get("force").unwrap(),
-        );*/
-        ap.parse_args_or_exit();
+            help_messages.get("barcode_length").unwrap(),
+        );
+
+
         
+    
+    
+        ap.refer(&mut arg_popular_template).add_option(
+            &["--popular-template"],
+            StoreTrue,
+            help_messages.get("popular_template").unwrap(),
+        );
+
+        ap.refer(&mut arg_no_umi).add_option(
+            &["--no-umi"],
+            StoreTrue,
+            help_messages.get("no_umi").unwrap(),
+        );
+            
+        ap.refer(&mut arg_testing_reads).add_option(
+            &["--testing-reads"],
+            Store,
+            help_messages.get("testing_reads").unwrap(),
+        );
+        
+        ap.refer(&mut arg_max_umi_length).add_option(
+            &["--max-umi-len"],
+            Store,
+            help_messages.get("max_umi_length").unwrap(),
+        );
+
+        ap.parse_args_or_exit();  
     }
 
     if command == "demultiplex" {
@@ -334,8 +385,8 @@ fn main() {
 
         demultiplex(
             &arg_input_folder_path,
-            &mut arg_read2_file_path,
             &mut arg_read1_file_path,
+            &mut arg_read2_file_path,
             &arg_sample_sheet_file_path,
             &arg_ouput_dir,
             &arg_report_dir,
@@ -359,6 +410,18 @@ fn main() {
     } else if command == "reports" {
         println!("Perform reports command");
         merge_qc_reports(&arg_qc_report_path, &arg_ouput_dir);
+    }else if command == "template" {
+        println!("Perform detect template command");
+        detect_template(&arg_read1_file_path, 
+            &arg_read2_file_path,
+            &arg_sample_sheet_file_path,
+            &arg_ouput_dir,
+            arg_testing_reads,
+            arg_barcode_length,
+            ! arg_no_umi,
+            arg_popular_template,
+            arg_max_umi_length
+        );
     }else {
         panic!("Please enter a command to perform from (demultiplex, reports, and template)!");
     }

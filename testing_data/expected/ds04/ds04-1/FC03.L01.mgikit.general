@@ -1,0 +1,10 @@
+#Lane statistics
+Run ID-Lane	Mb Total Yield	M Total Clusters	% bases ≥ Q30	Mean Quality	% Perfect Index
+FC03-L01	0.00236	0.00002	27.542	18.737	75.000
+#sample general info
+Sample ID	M Clusters	Mb Yield ≥ Q30	% R1 Yield ≥ Q30	% R2 Yield ≥ Q30	% R3 Yield ≥ Q30	% Perfect Index
+Undetermined	0.000012	0.000426	100.000	8.333	8.333	100.000
+SAM-01	0.000003	0.000084	100.000	0.000	0.000	66.667
+SAM-04	0.000003	0.000084	100.000	0.000	0.000	66.667
+SAM-02	0.000002	0.000056	100.000	0.000	0.000	100.000
+SAM-03	0	0	0.000	0.000	0.000	0.000

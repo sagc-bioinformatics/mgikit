@@ -6,6 +6,10 @@ use std::fs;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+
+/// It takes a template string as input and parse it.  
+/// It return a list of 10 elements incouding i7_exist, i7 length, shift from the begining of the barcode. 
+/// The three items are repeasted to i5 then umi. `--` are ignored. last item is the length of the barcode.
 pub fn parse_template(template: &String) -> Result<[usize; 10], &'static str> {
     let mut template_ls = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     //let vals: Vec<&str> = template.rsplit(':').unwrap();
@@ -40,6 +44,8 @@ pub fn parse_template(template: &String) -> Result<[usize; 10], &'static str> {
     Ok(template_ls)
 }
 
+/// It returns (template_list, sample_info, project_samples)
+/// 
 pub fn parse_sample_index(
     filename: &Path,
     template: &String,
@@ -93,6 +99,8 @@ pub fn parse_sample_index(
     let mut project_samples : HashMap<String, Vec<usize>> = HashMap::new();
     project_samples.insert(".".to_string(), Vec::new().to_owned());
     let mut report_unassigned_samples = false;
+    let mut sample_duplicate : HashMap<String, usize> = HashMap::new();
+    
     for line in lines {
         //println!("{}", line);
         if line.len() < 5 {
@@ -230,6 +238,16 @@ pub fn parse_sample_index(
                 String::new()
             };
 
+            let duplicate_sample_id = match sample_duplicate.get(&curr_sample_info[SAMPLE_COLUMN]) {
+                Some(dup_id) => dup_id.clone(),
+                None => {
+                    sample_duplicate.insert(curr_sample_info[SAMPLE_COLUMN].clone(), sample_itr);
+                    sample_itr
+                }
+            };
+            
+            
+            
             //println!("II55  {}", i5);
             match template_ls.get_mut(&curr_template) {
                 Some(tmp_data) => {
@@ -243,7 +261,7 @@ pub fn parse_sample_index(
                                 match i7_item.1.get_mut(&i5) {
                                     Some(_) => panic!("Two samples having the same indexes! i7: {} and i5: {}", &i7, &i5),
                                     None => {
-                                        i7_item.1.insert(i5, sample_itr);
+                                        i7_item.1.insert(i5, duplicate_sample_id);
                                     }
                                 }
                             } else {
@@ -253,10 +271,10 @@ pub fn parse_sample_index(
                         None => {
                             if check_i5 {
                                 let mut tmp = HashMap::new();
-                                tmp.insert(i5, sample_itr);
+                                tmp.insert(i5, duplicate_sample_id);
                                 tmp_data.4.insert(i7, (1000, tmp));
                             } else {
-                                tmp_data.4.insert(i7, (sample_itr, HashMap::new()));
+                                tmp_data.4.insert(i7, (duplicate_sample_id, HashMap::new()));
                             }
                         }
                     };
@@ -273,11 +291,11 @@ pub fn parse_sample_index(
                         let mut tmp = HashMap::new();
                         //let zzz = i5.clone();
                         //let zzzz = i7.clone();
-                        tmp.insert(i5, sample_itr);
+                        tmp.insert(i5, duplicate_sample_id);
                         sample_info.insert(i7, (1000, tmp));
                     //println!("SSSS {:?}", sample_info.get(&zzzz).unwrap().1.get(&zzz).unwrap());
                     } else {
-                        sample_info.insert(i7, (sample_itr, HashMap::new()));
+                        sample_info.insert(i7, (duplicate_sample_id, HashMap::new()));
                     }
 
                     let tmp = (
@@ -299,14 +317,18 @@ pub fn parse_sample_index(
                     template_ls.insert(curr_template, tmp);
                 }
             };
-
-            sample_information.push(curr_sample_info.to_owned());
+            if duplicate_sample_id == sample_itr {
+                sample_information.push(curr_sample_info.to_owned());
+            }
+            
             //break;
             //println!("After_itr {:?}", template_ls.get(&curr_tmpllll).unwrap().4.get(&i77).unwrap().1.get(&i55).unwrap());
 
             //output.push(vals.to_owned());
             //println!("line: {}", vals.join(";"));
             
+            
+
             sample_itr += 1;
         }
         
@@ -319,7 +341,16 @@ pub fn parse_sample_index(
 
     let mut out_template_data: Vec<_> = template_ls.values().map(|x| x.to_owned()).collect();
     if out_template_data.len() > 1 {
-        out_template_data.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+        out_template_data.sort_by(|a, b| {
+            if a.0 == b.0 {
+                b.0.cmp(&a.0)
+                //b.3.cmp(&a.3)
+            } else {
+                b.0.cmp(&a.0)
+            }
+            //a.0.cmp(&b.0).reverse()
+        }
+        );
     }
 
     /*
@@ -355,3 +386,300 @@ pub fn parse_sample_index(
         project_samples))
 }
 
+pub fn read_sample_sheet_into_dic(
+    filename: &Path) -> Result<(Vec<usize>, Vec<Vec<String>>, Vec<[String; 4]>), io::Error> {
+    
+    let mut sample_information: (Vec<usize>, Vec<Vec<String>>) = (vec![usize::MAX, usize::MAX, usize::MAX, usize::MAX], Vec::new());
+    let mut sample_indexes: Vec<[String; 4]> = Vec::new();
+    let mut header: Vec<String> = Vec::new();
+    let file_content = fs::read_to_string(filename)?;
+    let lines = file_content.lines();
+    let mut curr_sample_id = usize::MAX;
+    let mut curr_i7: usize = usize::MAX;
+    let mut curr_i5: usize = usize::MAX;
+    let mut i5_val: String;
+    
+    for line in lines {
+        if line.len() < 5 {
+            continue;
+        }
+
+        if header.len() == 0{
+            header = line.to_lowercase().split('\t').map(|x| x.trim().to_string()).collect();
+            for header_itr in 0..header.len(){
+                if header[header_itr] == "sample_id"{
+                    curr_sample_id = header_itr;
+                    sample_information.0[0] = header_itr;
+                }else if header[header_itr] == "i7"{
+                    curr_i7 = header_itr;
+                    sample_information.0[1] = header_itr;
+                }else if header[header_itr] == "i5"{
+                    curr_i5 = header_itr;
+                    sample_information.0[2] = header_itr;
+                }else if header[header_itr] == "project_id"{
+                    sample_information.0[3] = header_itr;
+                }                      
+            }
+            if curr_sample_id == usize::MAX || curr_i7 == usize::MAX {
+                panic!("sample_id and i7 must be in the sample sheet!");
+            }
+        }else{
+            
+            let vals: Vec<String> = line.split('\t').map(|x| x.trim().to_string()).collect();
+            if vals[curr_i7] == "." || vals[curr_i7].len() < 3 {
+                panic!("i7 ({}) should be longer than 3 chars!",  vals[curr_i7]);
+            }
+            
+            if curr_i5 != usize::MAX {
+                i5_val = vals[curr_i5].to_string();
+                if i5_val == "." {
+                    i5_val = String::new();
+                }
+                if i5_val != "" && i5_val.len() < 3 {
+                    panic!(
+                        "i5 ({}) should be longer than 3 chars!",
+                        i5_val
+                    );
+                }
+
+                sample_indexes.push([vals[curr_i7].to_string(), reverse_complement(&vals[curr_i7]).unwrap(), i5_val.to_string(), reverse_complement(&i5_val).unwrap()]);
+
+            }else{
+                sample_indexes.push([vals[curr_i7].to_string(), reverse_complement(&vals[curr_i7]).unwrap(), String::new(), String::new()]);
+            }
+            
+            
+            sample_information.1.push(vals.to_owned());
+            
+        }
+        
+    }
+
+    Ok((sample_information.0, sample_information.1, sample_indexes))
+}
+
+pub fn add_match(curr_template: String, sample_itr: usize, matches_stat: &mut HashMap<String, Vec<usize>>, sample_list_ln: usize) {
+    match matches_stat.get_mut(&curr_template){
+        Some(sample_reads) => {
+            sample_reads[sample_itr] += 1;
+        },
+        None => {
+            let mut tmp = vec![0; sample_list_ln];
+            tmp[sample_itr] += 1;
+            matches_stat.insert(curr_template, tmp);
+        }
+    };
+}
+
+pub fn get_mgikit_template(initial_template:&String, umi: bool, barcode_length: usize, i7_len: usize, i5_len: usize) -> (String, String, String){
+    
+    let mut final_template: Vec<String> = Vec::new();
+    let template_elements : Vec<String> = initial_template.split('_').map(String::from).collect();
+    let rc_ls : Vec<String> = template_elements[1].split(':').map(String::from).collect();
+    let mut index_ls : Vec<usize> = template_elements[0].split(':').map(|it| it.parse().unwrap()).collect();
+    
+    
+        let mut shift = 0;
+        let no_swap: bool = index_ls.len() == 1 || index_ls[0] < index_ls[1];
+        index_ls.sort();
+
+        let mut umi_loc = 0;
+        let mut umi_size= 0;
+        let mut item_added = 0;
+        //println!("{:?}", index_ls);
+        if index_ls[0] > 0{
+            final_template.push(format!("--{}", index_ls[0]));
+            shift += index_ls[0];
+            umi_size = index_ls[0];
+            item_added += 1;
+        }
+        //println!("1-   {:?}", final_template);
+        if no_swap{
+            final_template.push(format!("i7{}", i7_len));
+            shift += i7_len;
+        }else{
+            final_template.push(format!("i5{}", i5_len));
+            shift += i5_len;
+        }
+        item_added += 1;
+        //println!("2-   {:?}", final_template);
+        
+        if index_ls.len() == 2{
+            if shift < index_ls[1]{
+                final_template.push(format!("--{}", index_ls[1] - shift));
+                if index_ls[1] - shift > umi_size{
+                    umi_loc = item_added;
+                    umi_size = index_ls[1] - shift;
+                }
+                shift = index_ls[1];
+                item_added += 1;
+            }
+
+            if no_swap{
+                final_template.push(format!("i5{}", i5_len));
+                shift += i5_len;
+            }else{
+                final_template.push(format!("i7{}", i7_len));
+                shift += i7_len;
+            }
+            item_added += 1;
+        }
+        //println!("3-   {:?}", final_template);
+        
+        if shift < barcode_length{
+            final_template.push(format!("--{}", barcode_length - shift));
+            if barcode_length - shift > umi_size{
+                umi_loc = item_added;
+            }
+        }
+        //println!("4-   {:?}", final_template);
+        
+        if umi{
+            //println!("{}  ->  {}", final_template[umi_loc], umi_loc);
+            final_template[umi_loc] = final_template[umi_loc].replace("--", "um");
+        }
+        //println!("5-   {:?}", final_template);
+        
+    (final_template.join(":"), rc_ls[0].to_owned(), rc_ls[1].to_owned())
+}
+
+pub fn find_matches(sample_itr: usize, 
+    matches_stat: &mut HashMap<String, Vec<usize>>, 
+    sample_list_ln: usize, 
+    read_barcode_seq: &String,
+    sample_first_indx: &String,
+    sample_first_indx_rc: &String,
+    sample_second_indx: &String,
+    sample_second_indx_rc: &String){
+    
+    //println!("{} - {} - {} - {}  -> {}", sample_first_indx, sample_first_indx_rc, sample_second_indx, sample_second_indx_rc, read_barcode_seq);
+    let indexes  = match sample_second_indx.len() < 2 {
+            true => vec![sample_first_indx, sample_first_indx_rc],
+            false => vec![sample_first_indx, sample_first_indx_rc, sample_second_indx, sample_second_indx_rc]
+    };
+    //println!("{:?}", indexes);
+        for i in 0..2{
+            let first_matches: Vec<usize> = read_barcode_seq
+            .match_indices(indexes[i])
+            .map(|(i, _)| i)
+            .collect();
+            //println!("---------------------");
+            //println!("{} -> {}, matches first: {:?}", i, indexes[i], first_matches);
+
+            if first_matches.len() > 0{
+                for j in 2..indexes.len(){
+                    let second_matches: Vec<usize> = read_barcode_seq
+                    .match_indices(indexes[j])
+                    .map(|(i, _)| i )
+                    .collect();
+                   //println!("{} -> {}, matches second: {:?}", j, indexes[j], second_matches);
+                    for second_match in &second_matches{
+                        for first_match in &first_matches{
+                            //println!("sample - {}: comparing  {}  ->  {}    {}:{}",sample_itr, first_match, second_match, i, j);
+
+                            if *second_match >= first_match + sample_first_indx.len() || 
+                                *first_match >= second_match + sample_second_indx.len(){
+                                add_match(format!("{}:{}_{}:{}", 
+                                                            first_match, 
+                                                            second_match,
+                                                            i,
+                                                            j - 2), 
+                                    sample_itr, 
+                                    matches_stat, 
+                                    sample_list_ln);
+                            }
+                            
+                        }
+                    }
+                    
+                    
+                }
+    
+                if indexes.len() == 2{
+                    for first_match in first_matches{
+                        add_match(format!("{}_{}:.", 
+                                                            first_match,
+                                                            i), 
+                                    sample_itr, 
+                                    matches_stat, 
+                                    sample_list_ln);
+                    }   
+                }
+            }
+        }
+        
+    
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::samplesheet_utils::find_matches;
+
+    use super::get_mgikit_template;
+    
+    #[test]
+    fn test_get_mgikit_template() {
+        let tests: [(&str, bool, usize, usize, usize); 10] = 
+        [("0:8_0:0", true, 16, 8, 8), ("8_1:.", true, 16, 8, 0), ("0_1:.", false, 16, 8, 0), ("2_0:.", false, 10, 8, 0), 
+        ("2:12_0:0", false, 20, 8, 8), ("2:10_0:0", false, 20, 8, 8), ("8:0_1:0", true, 24, 8, 8),
+        ("0:16_0:0", true, 24, 8, 8), ("8:16_0:1", false, 24, 8, 8), ("8:16_0:1", true, 24, 8, 8)];
+        let expected_out: [(&str, &str, &str); 10] = 
+        [("i78:i58", "0", "0"), ("um8:i78", "1", "."), ("i78:--8", "1", "."), ("--2:i78", "0", "."), ("--2:i78:--2:i58", "0", "0"), 
+        ("--2:i78:i58:--2", "0", "0"), ("i58:i78:um8", "1", "0"), ("i78:um8:i58", "0", "0"), ("--8:i78:i58", "0", "1"), 
+        ("um8:i78:i58", "0", "1")];
+        for i in 0..tests.len(){
+            let res = get_mgikit_template(
+                &String::from(tests[i].0), 
+                tests[i].1,
+                tests[i].2,
+                tests[i].3,
+                tests[i].4);
+
+            assert_eq!(res.0, expected_out[i].0);
+            assert_eq!(res.1, expected_out[i].1);
+            assert_eq!(res.2, expected_out[i].2);
+        }
+        
+    }
+    
+    #[test]
+    fn test_find_matches() {
+        let mut matches: HashMap<String, Vec<usize>> = HashMap::new();
+        
+        let tests:[(usize, usize, String, String, String, String, String, usize); 4] = [
+            (0, 5, String::from("AAAAAAAACCCCCCCC"), String::from("CCCCCCCC"), String::from("GGGGGGGG"), String::from("TTTTTTTT"), String::from("AAAAAAAA"), 4), 
+            (1, 5, String::from("CCACGGTCTGCGAGAG"), String::from("CCACGGTC"), String::from("GACCGTGG"), String::from("TGCGAGAG"), String::from("CTCTCGCA"), 5),
+            (2, 5, String::from("ACGCTAGCTAGATTGA"), String::from("ACGCTAGCTA"), String::from("TAGCTAGCGT"), String::from(""), String::from(""), 6),
+            (3, 7, String::from("CTCTACGCTAGCTAGATTGA"), String::from("ACGCTAGCTA"), String::from("TAGCTAGCGT"), String::from(""), String::from(""), 7)
+            ];
+        let expected: [(String, usize); 4] = [(String::from("8:0_0:1"), 0), (String::from("0:8_0:0"), 0), (String::from("0_0:."), 0), (String::from("4_0:."), 0)];
+        
+        for i in 0..tests.len(){
+            for _ in 0..tests[i].7{
+                find_matches(
+                    tests[i].0, 
+                    &mut matches,
+                    tests[i].1,
+                    &tests[i].2,
+                    &tests[i].3,
+                    &tests[i].4,
+                    &tests[i].5,
+                    &tests[i].6);
+                    
+            }
+        }
+
+        for i in 0..tests.len(){
+            match matches.get(&expected[i].0){
+                Some(template_info) => {
+                    assert_eq!(template_info.len(), tests[i].1);
+                    assert_eq!(template_info[tests[i].0], tests[i].7)
+                },
+                None => assert_eq!(0, 1)
+            };
+        }
+        
+    }
+}

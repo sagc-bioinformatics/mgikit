@@ -53,6 +53,7 @@ pub fn get_all_mismatches<'a>(
     if all_indexes.len() == 0{
         return HashMap::new();
     }
+    
     let nec_ls = ['A', 'C', 'T', 'G', 'N'];
     //let mut index_combinations: HashMap<&String, Vec<HashSet<String>>> = HashMap::new();
 
