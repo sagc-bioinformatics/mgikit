@@ -1,6 +1,6 @@
 ---
 
-![SAGC-Bioinformatics](SAGC-logo-hover.png)
+![SAGC-Bioinformatics](docs/assets/SAGC-logo-hover.png)
 
 ---
 # MGIKIT 
@@ -13,7 +13,7 @@ associated samples.
 2. **template**: This command is used to detect the location and form of the indexes within the read barcode if unknown.
 3. **reports**: This command is used to merge Lanes' reports (demultiplexing and quality reports) and generate the same reports for the whole run and for grouped samples (multiple projects in the same run).
 
-Details about these functionalities are described at [mgikit usage documentation](usage_documentation.md). 
+Details about these functionalities are described at [mgikit usage documentation](docs/usage_documentation.md). 
 
 # Installation
 

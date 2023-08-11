@@ -12,9 +12,9 @@ flate2 = "*"
 gzp = { version = "*", default-features = false, features = ["deflate_rust"] }
 combinations = "*"
 itertools = "*"
-argparse = "0.2.2"
 chrono = "0.4"
 termion = "2.0.1"
+clap = "4.3.21"
 
 [dev-dependencies]
 md5 = "0.7.0"

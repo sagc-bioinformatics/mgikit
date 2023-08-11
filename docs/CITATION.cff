@@ -1,0 +1,10 @@
+cff-version: 0.0.0
+message: "Please cite as below."
+authors:
+  - family-names: [family name goes here]
+    given-names: [given names go here]
+    orcid: [ORCID goes here]
+title: "Title of repository goes here"
+version: 0.0.0
+doi: [DOI goes here]
+date-released: YYYY-MM-DD

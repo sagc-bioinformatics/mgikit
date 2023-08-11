@@ -1,0 +1,11 @@
+# see https://github.com/AustralianBioCommons/human-omics-data-sharing-field-guide/blob/main/_data/footer.yml
+copyright: Copyright notice
+extra_line:
+columns:
+  - type: links
+    width: 3
+    children:
+      - url_text: Main
+        url: /
+      - url_text: Contributors
+        url: /main/contributors

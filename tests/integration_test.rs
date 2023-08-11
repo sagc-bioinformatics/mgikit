@@ -97,7 +97,11 @@ fn testing_demultiplex() {
         let i7_rc = false;
         let i5_rc = false;
     
-       
+        let read1_file_name_suf: String =  String::from("_read_1.fq.gz");
+        let read2_file_name_suf: String =  String::from("_read_2.fq.gz");
+        let info_file: String =  String::from("BioInfo.csv");
+        
+    
         let keep_barcode = false;
     
         let writing_threshold = 1000;
@@ -154,7 +158,10 @@ fn testing_demultiplex() {
                 &undetermined_label,
                 &ambiguous_label,
                 force,
-                report_limit
+                report_limit,
+                &read1_file_name_suf,
+                &read2_file_name_suf,
+                &info_file
             );
             
             let paths = fs::read_dir(original_path).unwrap();

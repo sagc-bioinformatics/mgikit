@@ -333,7 +333,6 @@ pub fn demultiplex(
     arg_instrument: &String,
     arg_run: &String,
     disable_illumina_format: bool,
-    //single_read_input: bool,
     keep_barcode: bool,
     writing_threshold: usize,
     read_merging_threshold: usize,
@@ -341,15 +340,14 @@ pub fn demultiplex(
     undetermined_label: &String,
     ambiguous_label: &String,
     force: bool,
-    report_limit: usize
-
+    report_limit: usize,
+    read1_file_name_suf: &String,
+    read2_file_name_suf: &String,
+    info_file: &String
+    
 ) {
     // Validate input data
     let mut single_read_input = false;
-    let read1_file_name_suf = "_read_1.fq.gz";
-    let read2_file_name_suf = "_read_2.fq.gz";
-    let info_file = "BioInfo.csv";
-    
     let mut info_file_path = String::new();
     let mut paired_read_file_path_final  = read1_file_path.clone();
     let mut read_barcode_file_path_final = read2_file_path.clone();
@@ -1561,13 +1559,14 @@ pub fn detect_template(
         barcode_length = barcode_read_length - paired_read_length;
         println!("Barcode length is calculated as the difference between R2 length and R1.");
         let max_barcode_length:usize = match sample_indexes.iter().map(|it| it[0].len() + it[2].len()).max(){
-            Some(tmp_max) => tmp_max,
-            None => panic!("Sample sheet should have samples!") 
-        };
+                Some(tmp_max) => tmp_max,
+                None => panic!("Sample sheet should have samples!") 
+            };
+            
+            if barcode_length > max_barcode_length + max_umi_length{
+                panic!("The difference in read length is {}. It is greater than the the length of indexes and possible UMI {}. You need to prvide barcode length for this run!", barcode_length, max_barcode_length + max_umi_length);
+            }
         
-        if barcode_length > max_barcode_length + max_umi_length{
-            panic!("The difference in read length is {}. It is greater than the the length of indexes and possible UMI {}. You need to prvide barcode length for this run!", barcode_length, max_barcode_length + max_umi_length);
-        }
     }
     
     println!("Barcode length: {}", barcode_length);

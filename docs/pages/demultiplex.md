@@ -1,14 +1,12 @@
 ---
-
-![SAGC-Bioinformatics](assets/SAGC-logo-hover.png)
-
+title: Instructions for MGIKIT demultiplexing
+contributors: [Ziad Al-Bkhetan]
+description: 
+toc: true
+type: guides
 ---
-# MGIKIT 
-mgikit is a collection of tools used to demultiplex fastq files and generate demultiplexing and quality reports.
 
-The toolkit includes the following commands:
-
-## demultiplex
+### Demultiplexing functionality
 This command is used to demultiplex fastq files and assign the sequencing reads to their
 associated samples. The tool requires the following mandatory input files to perform the
 demultiplexing:
@@ -103,8 +101,9 @@ This parameter is used to provide the run id when the parameter `-i` or `--input
 
 + **`--comprehensive-scan`**: Enable comperhansive scan. 
 
+This parameter is only needed when having a mixed library dataset (different locations for the indexes in the read barcode for some samples).
 The default behaviour of the tool is to stop comparing the barcodes with
-samples’ indexes when it finds a match. This flag will force the toll to keep comparing with all other
+samples’ indexes when it finds a match. This flag will force the tool to keep comparing with all other
 samples to make sure that the read matches with only one sample. In a normal scenario, the read
 should match with only one sample, however, there is a chance that the read matches with multiple
 samples if the allowed number of mismatches is greater than the minimum hamming distance
@@ -138,7 +137,7 @@ The input fastq files can be provided to the tool in two ways:
     For example, `21-10233_S1_L01_R1_001.fastq.gz` and `21-10233_S1_L01_R2_001.fastq.gz`.
     <div align="center">
     
-    ![read-headers-figure](assets/file-naming.png)
+    ![read-headers-figure](/docs/assets/file-naming.png)
     
     </div>
     
@@ -174,7 +173,7 @@ Please see the details of both headers and the conversion in the figure below:
 
 <div align="center">
 
-![read-headers-figure](assets/read-header.png)
+![read-headers-figure](docs/assets/read-header.png)
 
 </div>
 
@@ -219,7 +218,7 @@ To understand how to use the demultiplexing tool, it is important to understand 
 The sequenced reads obtained by the MGI sequencing machine contain a string of nucleotides at the tail of read2 for paired-end sequencing or the tail of read1 for single-end sequencing. This substring is referred to as the read barcode which contains the indexes of the samples, single (i7) or dual (i7 and i5) indexes. It also includes the Unique Molecular Identifier (UMI) in some cases. 
 
 The demultiplexer tool looks at this read barcode and tries to match the indexes to a subsequence within the barcode to assign the read to a specific individual. In order to accomplish that, the tool needs to know where to look at the barcode to match with the index and from where to extract the UMI. This information is provided to the tool through the template parameter.
-The template parameter is a combination of four possible components of (i7*, i5*, um*, --*) separated by a colon “:”. Where:
+The template parameter is a combination of four possible components of (i7*, i5*, um*, --*) separated by a colon `:`. Where:
 
 + `i7`: the region where to expect the index i7 within the barcode.
 + `i5`: the region where to expect the index i5 within the barcode
@@ -242,7 +241,7 @@ The template parameter is a combination of four possible components of (i7*, i5*
 
 <div align="center">
 
-![template-example-1](assets/template-example-1.png)
+![template-example-1](docs/assets/template-example-1.png)
 
 </div>
 
@@ -260,7 +259,7 @@ The template parameter is a combination of four possible components of (i7*, i5*
 
 <div align="center">
 
-![template-example-2](assets/template-example-2.png)
+![template-example-2](docs/assets/template-example-2.png)
 
 </div>
 
@@ -339,12 +338,3 @@ Running the tool and getting the help message.
 ./mgikit -h
 
 ```
-
-## reports
-
-## template
-
-This command is used to detect the location and form of the indexes within the read barcode. **Still under development**
-
-
-

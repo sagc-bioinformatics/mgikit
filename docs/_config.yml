@@ -1,0 +1,42 @@
+title: "MGIKIT"
+description: A documenation and user guid for MGIKIT.
+remote_theme: ELIXIR-Belgium/jekyll-bootstrap-theme@2.1.0
+topnav_title: MGIKIT
+
+theme_variables:
+  # biocommons blue
+  theme_color: 205a86
+  topnav:
+    brand_logo: assets/SAGC-logo-hover.png
+  privacy_statement_url:
+
+permalink: /:categories/:year/:month/:day/:title
+
+exclude:
+  - README.md
+  - .gitignore
+  - var/
+  - vendor
+  - Gemfile*
+  - LICENSE
+
+
+defaults:
+  -
+    scope:
+      path: ""
+      type: "pages"
+    values:
+      permalink: /:basename
+      layout: "page"
+      sidebar: main
+    
+    
+plugins:
+  - elixir-toolkit-theme-plugins
+  - jekyll-redirect-from
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-github-metadata
+  - jemoji
+  - webrick
