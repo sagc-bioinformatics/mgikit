@@ -1,12 +1,12 @@
 ---
 title: Instructions for MGIKIT demultiplexing
 contributors: [Ziad Al-Bkhetan]
-description: 
+description: User guide for MGIKIT demultiplexing including parameters details and usage examples.
 toc: true
 type: guides
 ---
 
-### Demultiplexing functionality
+## Demultiplexing functionality
 This command is used to demultiplex fastq files and assign the sequencing reads to their
 associated samples. The tool requires the following mandatory input files to perform the
 demultiplexing:
@@ -173,7 +173,7 @@ Please see the details of both headers and the conversion in the figure below:
 
 <div align="center">
 
-![read-headers-figure](docs/assets/read-header.png)
+![read-headers-figure](/docs/assets/read-header.png)
 
 </div>
 
@@ -241,7 +241,7 @@ The template parameter is a combination of four possible components of (i7*, i5*
 
 <div align="center">
 
-![template-example-1](docs/assets/template-example-1.png)
+![template-example-1](/docs/assets/template-example-1.png)
 
 </div>
 
@@ -259,7 +259,7 @@ The template parameter is a combination of four possible components of (i7*, i5*
 
 <div align="center">
 
-![template-example-2](docs/assets/template-example-2.png)
+![template-example-2](/docs/assets/template-example-2.png)
 
 </div>
 
@@ -281,7 +281,7 @@ After demultiplexing, the barcode will be trimmed by default including all parts
 Templates and indexes forms can be provided by the user, however, the command `template` can detect the barcode template and the form of the indexes for the run. 
 
 
-### Reports
+### Reports {#demultipexing-reports-section}
 
 The demultiplex command generates multiple reports with file names that start with the flowcell and lane being demultiplexed:
 
@@ -328,7 +328,7 @@ The first three reports must be generated for each run. It is unlikely that the 
 
 ### Execution examples
 
-You can use the datasets at `*` to do these tests.
+You can use the datasets at `testing_data` to do these tests.
 
 **Case 1:**
 

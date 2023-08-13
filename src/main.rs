@@ -270,7 +270,6 @@ fn main() {
                     Arg::new("arg_ouput_dir")
                         .short('o')
                         .long("output")
-                        .default_value("")
                         .help("output directory")
                 )               
         )
@@ -366,8 +365,11 @@ fn main() {
                     *arg_max_umi_length
                 );
             },
+            Some((command_nm, _)) => {
+                panic!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, or template)!", command_nm);
+            }
             None => {
-                panic!("Please enter a command to perform from (demultiplex, report, or template)!")
+                panic!("Please enter a command to perform from (demultiplex, report, or template)!");
             }
         }
         let dur = start.elapsed();

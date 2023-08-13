@@ -1,7 +1,7 @@
 ---
 title: Instructions for template detection
 contributors: [Ziad Al-Bkhetan]
-description: 
+description: User guide for MGIKIT template detection functionality including parameters details and usage examples.
 toc: true
 type: guides
 ---
