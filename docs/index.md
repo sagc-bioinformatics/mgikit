@@ -35,7 +35,7 @@ Using this compehansive scan, teh tool can detect the templates for mixed librar
 
 ### report
 
-Under development!
+This command is to merge demultiplexing and quality reports from multiple lanes into one comprehensive report for MultQC reports visualisation.
 
 <hr/>
 
