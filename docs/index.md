@@ -1,5 +1,5 @@
 ---
-title: Documenation and User Guide for MGIKIT
+title: Documentation and User Guide for MGIKIT
 contributors: [Ziad Al-Bkhetan]
 description: 
 toc: false
@@ -26,11 +26,11 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 
 ### template
 
-This command is used to detect the location and form of the indexes within the read barcode. It simply goes though a small number of the reads and investiaget the number of matches with the indexes in th sammple sheet within each possible location in teh read barcode and consdering the indexes as is and their reverse complemntary. 
+This command is used to detect the location and form of the indexes within the read barcode. It simply goes through a small number of the reads and investigates the number of matches with the indexes in the sample sheet within each possible location in the read barcode and considering the indexes as is and their reverse complementary. 
 
-It reports matches for all possible combinations, and uses the read template that had the maximum number of matches. This process happens for each sample individually and therefore, the best matching template for each sample will be reported. 
+It reports matches for all possible combinations and uses the read template that had the maximum number of matches. This process happens for each sample individually and therefore, the best matching template for each sample will be reported. 
 
-Using this compehansive scan, teh tool can detect the templates for mixed libraries. 
+Using this comprehensive scan, the tool can detect the templates for mixed libraries. 
 
 
 ### report
