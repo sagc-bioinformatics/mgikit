@@ -29,6 +29,10 @@ cargo build --release
 
 This is my first project using the Rust programming language. Very likely that the code can be improved and optimised. I will be improving it with time.   
 
+# Commerical Use
+
+Please contact us if you want to use the software for commercial purposes.
+
 # Contact information
 
 For any help or inquiries, please contact: ziad.albkhetan@gmail.com
