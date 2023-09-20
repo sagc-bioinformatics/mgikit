@@ -35,4 +35,4 @@ Please contact us if you want to use the software for commercial purposes.
 
 # Contact information
 
-For any help or inquiries, please contact: ziad.albkhetan@gmail.com
+For any help or inquiries, please contact: ziad.albkhetan@gmail.com or sagc@sahmri.com
