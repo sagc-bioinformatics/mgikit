@@ -1,0 +1,32 @@
+Read length = 8
+i7 length = 8
+i5 length = 8
+
+indexes:
+
+S1: 
+
+ACGGGCAT  GGCTAGAG
+ACGCTAAT  GGCTAGAG
+ACGCCCAT  GGCCAGAG
+GGGTCGAT  GGGGACTA
+
+
+S1 and S2 ( 3bp in i7 are different )
+S3 and S2 2 bp in i7 and 1bp in i5
+S3 and S1 2 bp in i7 and 1bp in i5
+S4 many bp are different
+
+
+scores:
+readqc:
+ 
+
+
+Matches: (mismatches : samples)
+s1: READ 1 AND 4
+s2: 6 + 7
+
+s3: 8, 9, 10, 11
+
+s4: 12, 13, 14, 15

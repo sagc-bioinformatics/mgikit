@@ -56,6 +56,7 @@ fn main() {
                 .arg(
                     Arg::new("arg_input_folder_path")
                         .short('i')
+                        .default_value("")
                         .long("input")
                         .help("The path to read2.fastq.gz See the example for the required format.")
                 )
@@ -64,6 +65,7 @@ fn main() {
                         .short('r')
                         .long("read2")
                         .alias("2")
+                        .default_value("")
                         .help("The path to read2.fastq.gz See the example for the required format.")
                 )
                 .arg(
@@ -71,6 +73,7 @@ fn main() {
                         .short('f')
                         .long("read1")
                         .alias("1")
+                        .default_value("")
                         .help("The path to read1.fastq.gz See the example for the required format.")
                 )
                 .arg(
@@ -84,11 +87,13 @@ fn main() {
                     Arg::new("arg_ouput_dir")
                         .short('o')
                         .long("output")
+                        .default_value("")
                         .help("Path to the output folder. If not provided, the output will be written at mgiKit_ followed by current data and time.")
                 )
                 .arg(
                     Arg::new("arg_report_dir")
                         .long("reports")
+                        .default_value("")
                         .help("Prefix of report file. If not provided, the output will be written at output_ followed by current data and time.")
                 )
                 .arg(
@@ -102,7 +107,7 @@ fn main() {
                 .arg(
                     Arg::new("arg_template")
                         .long("template")
-                        
+                        .default_value("")
                         .help("The general template of the indexes to be used for demultiplexing.")
                 )
                 .arg(
@@ -150,19 +155,19 @@ fn main() {
                 .arg(
                     Arg::new("arg_lane")
                         .long("lane")
-                        
+                        .default_value("")
                         .help("The lane number, required for Illumina format.")
                 )
                 .arg(
                     Arg::new("arg_instrument")
                         .long("instrument")
-                        
+                        .default_value("")
                         .help("The Id of the instrument required for Illumina format.")
                 )
                 .arg(
                     Arg::new("arg_run")
                         .long("run")
-                        
+                        .default_value("")
                         .help("The run number, required for Illumina format.")
                 )
                 .arg(
@@ -221,6 +226,41 @@ fn main() {
             Command::new("template")
                 .about("Detect barcode template.")
                 .arg(
+                    Arg::new("arg_input_folder_path")
+                        .short('i')
+                        .default_value("")
+                        .long("input")
+                        .help("The path to read2.fastq.gz See the example for the required format.")
+                )
+                .arg(
+                    Arg::new("arg_read2_file_path")
+                        .short('r')
+                        .long("read2")
+                        .alias("2")
+                        .default_value("")
+                        .help("The path to read2.fastq.gz See the example for the required format.")
+                )
+                .arg(
+                    Arg::new("arg_read1_file_path")
+                        .short('f')
+                        .long("read1")
+                        .alias("1")
+                        .default_value("")
+                        .help("The path to read1.fastq.gz See the example for the required format.")
+                ).arg(
+                    Arg::new("arg_sample_sheet_file_path")
+                        .short('s')
+                        .long("sample-sheet")
+                        .required(true)
+                        .help("The path to the sample/index map.")
+                )
+                .arg(
+                    Arg::new("arg_ouput_dir")
+                        .short('o')
+                        .long("output")
+                        .help("output directory")
+                )               
+                .arg(
                     Arg::new("arg_barcode_length")
                         .long("barcode-length")
                         .default_value("0")
@@ -261,10 +301,10 @@ fn main() {
                 .about("Merge demultipexing reports.")
                 .arg(
                     Arg::new("arg_qc_report_path")
-                        .long("qc-reports")
+                        .long("qc-report")
                         .required(true)
-                        .value_delimiter(' ') 
-                        .help("The paths to the QC reports separated by a space ` `.")
+                        .action(clap::ArgAction::Append) 
+                        .help("The paths to the QC reports, repeat it for each report.")
                 ) 
                 .arg(
                     Arg::new("arg_ouput_dir")

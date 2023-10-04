@@ -15,7 +15,7 @@ if the run has multiple lanes, there will be lane-specific reports. The reports 
 
 ## Command arguments
 
-+ **`--qc-reports`**: The paths to the QC reports are separated by a space ` `. This argument takes multiple values and is mandatory. The tool expects here the reports generated for each lane in the run and you also can combine the reports generated from multiple runs for the same samples.
++ **`--qc-report`**: The path to the QC report, you can add multiple paths by reusing the same parameter. For example, `--qc-report file1 --qc-report file2`. This argument takes multiple values and is mandatory. The tool expects here the reports generated for each lane in the run and you also can combine the reports generated from multiple runs for the same samples.
  
 
 + **`-o or --output`**: The path and prefix of output files. The tools will create two files at the same path with the same prefix and end with `.info` and `.general`.

@@ -314,13 +314,83 @@ The first three reports must be generated for each run. It is unlikely that the 
 
 ### Execution examples
 
-You can use the datasets at `testing_data` to do these tests.
+You can use the datasets at `testing_data` to perform these tests.
 
-**Case 1:**
+**1. Demultiplexing a run with dual indexes (i7 and i5)**
 
-Running the tool and getting the help message.
 
 ```bash
-./mgikit -h
+target/release/mgikit  demultiplex \
+        -i testing_data/input/ds01/L01/ \
+        -s testing_data/expected/ds01/sample_sheet_expected.tsv \
+        -o ./output \
 
 ```
+
+**2. demultiplexing a run with dual indexes (i7 and i5) keeping MGI format**
+
+```bash
+target/release/mgikit  demultiplex \
+        -i testing_data/input/ds01/L01/ \
+        -s testing_data/expected/ds01/sample_sheet_expected.tsv \
+        -o ./output \
+        --disable-illumina \
+        --lane L01
+```
+
+**3. demultiplexing a run with single index i7 and umi**
+
+```bash
+target/release/mgikit  demultiplex \
+        -f testing_data/input/ds08/L01/FC08_L01_read_1.fq.gz \
+        -r testing_data/input/ds08/L01/FC08_L01_read_2.fq.gz \
+        -s testing_data/expected/ds08/sample_sheet_expected.tsv \
+        -o ./output \
+        --disable-illumina \
+        --lane L01
+
+```
+
+**4. demultiplexing a run using general template**
+
+```bash
+ target/release/mgikit  demultiplex \
+        -f testing_data/input/ds08/L01/FC08_L01_read_1.fq.gz \
+        -r testing_data/input/ds08/L01/FC08_L01_read_2.fq.gz \
+        -s testing_data/expected/ds08/sample_sheet_expected.tsv  \
+        -o ./output \
+        --instrument ins_01 \
+        --run 20231212 \
+        --lane L01 \
+        --template i78:--8
+
+```
+
+**5. demultiplexing a mixed library run**
+
+```bash
+target/release/mgikit  demultiplex  \
+        -f testing_data/input/ds02/L01/FC02_L01_read_1.fq.gz \
+        -r testing_data/input/ds02/L01/FC02_L01_read_2.fq.gz \
+        -s testing_data/expected/ds02/sample_sheet_expected.tsv  \
+        -o ./output \
+        --instrument ins_01 \
+        --run 20231212 \
+        --lane L01
+```
+
+**6. demultiplexing a run with samples from multiple projects**
+
+The main difference here is that the sample sheet contains a column that links each sample to a specific project. The main difference in the output is that the tool will generate reports for the samples of each project.
+
+```bash
+target/release/mgikit  demultiplex   \
+        -f testing_data/input/ds02/L01/FC02_L01_read_1.fq.gz \
+        -r testing_data/input/ds02/L01/FC02_L01_read_2.fq.gz \
+        -s testing_data/expected/ds02/sample_sheet_expected_proj.tsv \
+        -o ./output \
+        --instrument ins_01 \
+        --run 20231212 \
+        --lane L01
+```
+
