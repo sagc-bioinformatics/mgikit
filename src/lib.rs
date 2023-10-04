@@ -377,8 +377,8 @@ pub fn demultiplex(
     let mut run = String::new();
     let mut lane = String::new();
     
-    let quick = true;
-    let skip: i8 = -1;
+    //let quick = true;
+    let skip: i8 = 100;
 
     if input_folder_path.len() > 0{
         let entries = fs::read_dir(input_folder_path).unwrap()

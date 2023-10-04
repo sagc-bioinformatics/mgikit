@@ -50,8 +50,8 @@ fn testing_template() {
          };
  
         
-        let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_R1.fastq.gz", ds_itr_in, ds_itr_in));
-        let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_R2.fastq.gz", ds_itr_in, ds_itr_in));
+        let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_in));
+        let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_in));
         let out_sample_sheet_file_path : String = String::from(format!("testing_data/output/ds0{}/sample_sheet", ds_itr_tmp));
         let expected_sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.tsv", ds_itr_tmp));
         
