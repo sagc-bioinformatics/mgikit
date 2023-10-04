@@ -43,3 +43,6 @@ This command is to merge demultiplexing and quality reports from multiple lanes 
 
 {% include section-navigation-tiles.html type="guides" %}
 
+## Commerical Use
+
+Please contact us if you want to use the software for commercial purposes.
