@@ -141,14 +141,14 @@ fn main() {
                 .arg(
                     Arg::new("arg_writing_threshold")
                         .long("writing-buffer")
-                        .default_value("10000")
+                        .default_value("1000")
                         .value_parser(clap::value_parser!(usize))
                         .help("The number of merged reads that when reached, data will be saved.")
                 )
                 .arg(
                     Arg::new("arg_read_merging_threshold")
                         .long("merged-reads")
-                        .default_value("1000")
+                        .default_value("131072")
                         .value_parser(clap::value_parser!(usize))
                         .help("The number of reads that will be merged in one string before writng.")
                 )
@@ -220,6 +220,13 @@ fn main() {
                         .long("info-file")
                         .default_value("BioInfo.csv")
                         .help("The name of the info file that contains the run information. Only needed when using the `--input` parameter.")
+                )
+                .arg(
+                    Arg::new("arg_report_level")
+                        .long("report-level")
+                        .default_value("2")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The level of reporting.")
                 )
         )
         .subcommand(
@@ -345,6 +352,7 @@ fn main() {
                 let arg_read1_file_name_suf: &String = demultiplex_command.get_one::<String>("arg_read1_file_name_suf").unwrap();
                 let arg_read2_file_name_suf: &String = demultiplex_command.get_one::<String>("arg_read2_file_name_suf").unwrap();
                 let arg_info_file: &String = demultiplex_command.get_one::<String>("arg_info_file").unwrap();
+                let arg_report_level: &usize = demultiplex_command.get_one::<usize>("arg_report_level").unwrap();
                 
                 demultiplex(
                     arg_input_folder_path,
@@ -371,7 +379,8 @@ fn main() {
                     *arg_report_limit,
                     arg_read1_file_name_suf,
                     arg_read2_file_name_suf,
-                    arg_info_file
+                    arg_info_file,
+                    *arg_report_level
                 );
             },
             Some(("report", report_command)) => {

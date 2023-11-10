@@ -8,13 +8,18 @@ readme = "README.md"
 
 
 [dependencies]
-flate2 = "*"
+flate2 = { version = "1.0.17", features = ["zlib-ng"], default-features = false }
 gzp = { version = "*", default-features = false, features = ["deflate_rust"] }
 combinations = "*"
 itertools = "*"
 chrono = "0.4"
 termion = "2.0.1"
 clap = "4.3.21"
+fastq = "0.6.0"
+rayon = "1.8.0"
+
+niffler = "2.5.0"
+memchr = "2.6.4"
 
 [dev-dependencies]
 md5 = "0.7.0"
