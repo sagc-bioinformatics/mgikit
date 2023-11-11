@@ -14,6 +14,7 @@ use gzp::{
     deflate::Mgzip,
     par::compress::{ParCompress, ParCompressBuilder},
     ZWriter,
+    Compression
 };
 
 use fastq::{each_zipped, parse_path, Record};
@@ -31,7 +32,7 @@ mod index_dic;
 use crate::index_dic::*;
 
 
-const BUFSIZE: usize = 1 << 22;
+const BUFSIZE: usize = 1 << 17;
 const QUEUELEN: usize = 2;
 
 
@@ -480,7 +481,10 @@ fn write_buffer(read_buffers: &Vec<Vec<u8>>, output_file: &String,
         .open(output_file_path)
         .expect("couldn't create output");
 
-    let mut writer: ParCompress<Mgzip> = ParCompressBuilder::new().from_writer(outfile);
+    let mut writer: ParCompress<Mgzip> = ParCompressBuilder::new()
+    .compression_level(Compression::new(2))
+    .from_writer(outfile);
+    
     for read_buffer in &read_buffers[..last_element]{
         writer.write_all(&read_buffer[..]).unwrap();
     }
@@ -544,7 +548,7 @@ pub fn demultiplex(
     let mut instrument = String::new();
     let mut run = String::new();
     let mut lane = String::new();
-    
+    let compression_level = 2;
     //let quick = true;
     
     if input_folder_path.len() > 0{
@@ -704,6 +708,7 @@ pub fn demultiplex(
     println!("Run: {}", run);
     println!("Lane: {}", lane);
     println!("Comprehensive scan mood: {}", comprehensive_scan);
+    println!("Compression level: {}. (0 no compression but fast, 9 best compression bust slow.)", compression_level);
    
 
     let mut i7_rc = arg_i7_rc;
@@ -990,7 +995,9 @@ pub fn demultiplex(
         out_read_barcode_buffer_last_element.push(0);
         out_paired_read_buffer_last_element.push(0);
         out_read_barcode_buffer.push(vec![vec![0; read_merging_threshold]; writing_threshold + 1]);
-        out_paired_read_buffer.push( vec![vec![0; read_merging_threshold]; writing_threshold + 1]);
+        if ! single_read_input{
+            out_paired_read_buffer.push( vec![vec![0; read_merging_threshold]; writing_threshold + 1]);
+        }
         
         
     }
@@ -1031,8 +1038,7 @@ pub fn demultiplex(
     let threads :usize = 1;
 
     
-    const BUFSIZE: usize = 1 << 21;
-
+    
     let (mut reader_barcode_read, _) = 
     niffler::get_reader(Box::new(std::fs::File::open(read_barcode_file_path_final).unwrap())).unwrap();
     
@@ -1098,7 +1104,7 @@ pub fn demultiplex(
                     header_start = 0;
                 }
                 curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-                //println!("{}", curr_bytes);
+                //println!("{}  of  {}", curr_bytes, BUFSIZE);
                 if curr_bytes == 0{
                     break;
                 }
@@ -1115,6 +1121,7 @@ pub fn demultiplex(
                 header_start = 0;
             }
             curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
+            //println!("{}  of  {}", curr_bytes, BUFSIZE);
             if curr_bytes == 0{
                 break;
             }
@@ -1135,6 +1142,7 @@ pub fn demultiplex(
                     panic!("Invalid fastq file or the buffer is to small to hold one read!");
                 }
                 curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
+                //println!("{}  of  {}", curr_bytes, BUFSIZE);
                 if curr_bytes == 0{
                     panic!("Invalid fastq file!");
                 }
@@ -1152,6 +1160,7 @@ pub fn demultiplex(
                 header_start = 0;
             }
             curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
+            //println!("{}  of  {}", curr_bytes, BUFSIZE);
             if curr_bytes == 0{
                 break;
             }
@@ -1474,6 +1483,7 @@ pub fn demultiplex(
                         if curr_bytes == 0{
                             break;
                         }
+                        
                         read_bytes_1 += curr_bytes;
                         continue;
                     },
@@ -1863,10 +1873,6 @@ pub fn demultiplex(
     //print_type_of(&read_cntr);
     
     
-    dur = start.elapsed();
-    
-    println!("{} reads were processed in {} secs.", read_cntr, dur.as_secs());
-
     //println!("reading time is {} nanos.", read_secs);
     
 
@@ -1900,12 +1906,17 @@ pub fn demultiplex(
         }
     }
 
+    dur = start.elapsed();
+    
+    println!("{} reads were processed in {} secs.", read_cntr, dur.as_secs());
     //let dur = start.elapsed();
     //t_write += dur.as_nanos();
 
 
     //let start = Instant::now();
-        
+    
+    let start_logs = Instant::now();
+    
     
     if sample_mismatches[ambiguous_label_id][0] == 0{
         sample_information.pop();
@@ -2057,6 +2068,11 @@ pub fn demultiplex(
             }
         }
     }
+
+    let log_dur = start_logs.elapsed();
+    
+    println!("Writing all logs and reports took {} secs.", log_dur.as_secs());
+
 }
 
 
