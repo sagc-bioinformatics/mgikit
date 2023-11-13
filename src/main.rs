@@ -141,14 +141,14 @@ fn main() {
                 .arg(
                     Arg::new("arg_writing_threshold")
                         .long("writing-buffer")
-                        .default_value("1000")
+                        .default_value("1")
                         .value_parser(clap::value_parser!(usize))
                         .help("The number of merged reads that when reached, data will be saved.")
                 )
                 .arg(
                     Arg::new("arg_read_merging_threshold")
                         .long("merged-reads")
-                        .default_value("131072")
+                        .default_value("648686")
                         .value_parser(clap::value_parser!(usize))
                         .help("The number of reads that will be merged in one string before writng.")
                 )
