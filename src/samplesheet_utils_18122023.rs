@@ -46,8 +46,8 @@ pub fn parse_template(template: &String) -> Result<[usize; 10], &'static str> {
 
 /// It returns (template_list, sample_info, project_samples)
 /// 
-
-pub fn parse_sample_index_(
+#[allow(unused)]
+pub fn parse_sample_index_old(
     filename: &Path,
     template: &String,
     i7_rc: bool,
@@ -59,14 +59,12 @@ pub fn parse_sample_index_(
         HashSet<String>,
         HashSet<String>,
         String,
-        HashMap<Vec<u8>, (usize, HashMap<Vec<u8>, usize>)>,
+        HashMap<String, (usize, HashMap<String, usize>)>,
         bool,
         [usize; 10],
     )>, 
     Vec<Vec<String>>,
-    HashMap<String, Vec<usize>>,
-    Vec<usize>,
-    Vec<usize> 
+    HashMap<String, Vec<usize>>
     ),
     io::Error,
 > {
@@ -79,7 +77,7 @@ pub fn parse_sample_index_(
             HashSet<String>,
             HashSet<String>,
             String,
-            HashMap<Vec<u8>, (usize, HashMap<Vec<u8>, usize>)>,
+            HashMap<String, (usize, HashMap<String, usize>)>,
             bool,
             [usize; 10],
         ),
@@ -103,10 +101,7 @@ pub fn parse_sample_index_(
     project_samples.insert(".".to_string(), Vec::new().to_owned());
     let mut report_unassigned_samples = false;
     let mut sample_duplicate : HashMap<String, usize> = HashMap::new();
-    let mut writing_samples: Vec<usize> = Vec::new();
-    let mut unique_sample_id: Vec<usize> = Vec::new();
-    let mut dup_ids = 0;
-    let mut curr_unique_id;
+    
     for line in lines {
         //println!("{}", line);
         if line.len() < 5 {
@@ -245,19 +240,15 @@ pub fn parse_sample_index_(
             };
 
             let duplicate_sample_id = match sample_duplicate.get(&curr_sample_info[SAMPLE_COLUMN]) {
-                Some(dup_id) => {
-                    curr_unique_id = unique_sample_id[*dup_id]; 
-                    *dup_id
-                },
+                Some(dup_id) => dup_id.clone(),
                 None => {
                     sample_duplicate.insert(curr_sample_info[SAMPLE_COLUMN].clone(), sample_itr);
-                    curr_unique_id = dup_ids; 
-                    dup_ids += 1;
                     sample_itr
                 }
             };
-            writing_samples.push(duplicate_sample_id);
-            unique_sample_id.push(curr_unique_id);
+            
+            
+            
             //println!("II55  {}", i5);
             match template_ls.get_mut(&curr_template) {
                 Some(tmp_data) => {
@@ -265,13 +256,13 @@ pub fn parse_sample_index_(
                     tmp_data.1.insert(i7.clone());
                     tmp_data.2.insert(i5.clone());
 
-                    match tmp_data.4.get_mut(i7.as_bytes()) {
+                    match tmp_data.4.get_mut(&i7) {
                         Some(i7_item) => {
                             if check_i5 {
-                                match i7_item.1.get_mut(i5.as_bytes()) {
+                                match i7_item.1.get_mut(&i5) {
                                     Some(_) => panic!("Two samples having the same indexes! i7: {} and i5: {}", &i7, &i5),
                                     None => {
-                                        i7_item.1.insert(i5.as_bytes().to_vec(), sample_itr);
+                                        i7_item.1.insert(i5, duplicate_sample_id);
                                     }
                                 }
                             } else {
@@ -281,10 +272,10 @@ pub fn parse_sample_index_(
                         None => {
                             if check_i5 {
                                 let mut tmp = HashMap::new();
-                                tmp.insert(i5.as_bytes().to_vec(), sample_itr);
-                                tmp_data.4.insert(i7.as_bytes().to_vec(), (usize::MAX, tmp));
+                                tmp.insert(i5, duplicate_sample_id);
+                                tmp_data.4.insert(i7, (1000, tmp));
                             } else {
-                                tmp_data.4.insert(i7.as_bytes().to_vec(), (sample_itr, HashMap::new()));
+                                tmp_data.4.insert(i7, (duplicate_sample_id, HashMap::new()));
                             }
                         }
                     };
@@ -301,11 +292,11 @@ pub fn parse_sample_index_(
                         let mut tmp = HashMap::new();
                         //let zzz = i5.clone();
                         //let zzzz = i7.clone();
-                        tmp.insert(i5.as_bytes().to_vec(), sample_itr);
-                        sample_info.insert(i7.as_bytes().to_vec(), (usize::MAX, tmp));
+                        tmp.insert(i5, duplicate_sample_id);
+                        sample_info.insert(i7, (1000, tmp));
                     //println!("SSSS {:?}", sample_info.get(&zzzz).unwrap().1.get(&zzz).unwrap());
                     } else {
-                        sample_info.insert(i7.as_bytes().to_vec(), (sample_itr, HashMap::new()));
+                        sample_info.insert(i7, (duplicate_sample_id, HashMap::new()));
                     }
 
                     let tmp = (
@@ -392,17 +383,9 @@ pub fn parse_sample_index_(
         }
     };
 
-    //adding undetrmined and ambiguose samples ids.
-    writing_samples.push(writing_samples.len());
-    unique_sample_id.push(unique_sample_id.len());
-    writing_samples.push(writing_samples.len());
-    unique_sample_id.push(unique_sample_id.len());
-
     Ok((out_template_data, 
         sample_information,
-        project_samples,
-        writing_samples,
-        unique_sample_id))
+        project_samples))
 }
 
 
@@ -763,7 +746,6 @@ pub fn parse_sample_index(
         writing_samples,
         unique_sample_id))
 }
-
 
 
 pub fn read_sample_sheet_into_dic(

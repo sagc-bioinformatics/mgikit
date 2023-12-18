@@ -7,6 +7,7 @@ use std::process::Command;
 use std::path::Path;
 
 fn get_hash(file_path: &String) -> Vec<u8> {
+    println!("Getting hash for the file {}.", file_path);
     let mut f = File::open(file_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
@@ -131,7 +132,7 @@ fn testing_demultiplex() {
     for ds_itr_tmp in 1..10{
         
         if ds_itr_tmp != 5 {
-            continue;
+            //continue;
         }
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
@@ -199,6 +200,27 @@ fn testing_demultiplex() {
                                                 format!("{}", allowed_mismatches), 
                                                 "--force".to_string()];
             
+            println!("{:?}", vec!["demultiplex".to_string(),
+            "-f".to_string(),
+            read1_file_path.to_string(), 
+            "-r".to_string(), 
+            read2_file_path.to_string(), 
+            "-i".to_string(), 
+            input_folder_path.to_string(), 
+            "-s".to_string(), 
+            sample_sheet_file_path.to_string(), 
+            "--lane".to_string(), 
+            lane.to_string(), 
+            "--run".to_string(), 
+            run.to_string(), 
+            "--instrument".to_string(), 
+            instrument.to_string(), 
+            "-o".to_string(), 
+            ouput_dir.to_string(), 
+            "-m".to_string(), 
+            format!("{}", allowed_mismatches), 
+            "--force".to_string()]);
+
             if comprehensive_scan{
                 my_args.push("--comprehensive-scan".to_string());
             }
@@ -217,8 +239,6 @@ fn testing_demultiplex() {
                 .output() // Capture the output of the command.
                 .expect("Failed to execute command");
             
-
-
             if output.status.success() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
