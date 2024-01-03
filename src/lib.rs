@@ -1,4 +1,7 @@
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::collections::{HashMap,HashSet};
 
 use std::path::Path;
@@ -31,11 +34,8 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
-//pub const BUFFER_SIZE1: usize = 64 * (1 << 10) * 2;
-
 const BUFFER_SIZE: usize = 1 << 17;
-//const BUFFER_SIZE_WR: usize = 1 << 17;
-const QUEUELEN: usize = 2;
+//const QUEUELEN: usize = 2;
 
 
 fn write_reads(reads_buffer: &Vec<String>, output_file: &String) {
@@ -544,9 +544,13 @@ fn find_end_of_line(reader: &mut Box<dyn Read> , buffer: &mut[u8], start:&mut us
    
 }
 
-fn write_buffer(read_buffer: &[u8], writer: &mut Option<ParCompress<Mgzip>>) {
+fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<ParCompress<Mgzip>>) {
     match writer{
-            Some(ref mut curr_writer) => {curr_writer.write_all(read_buffer).unwrap()},
+            Some(ref mut curr_writer) => {
+                curr_writer.write_all(read_buffer).unwrap()
+                //io::copy( read_buffer, curr_writer).unwrap()
+            },
+            
             None => panic!("expeted a writer, but None found!")
     };
     
@@ -556,7 +560,8 @@ fn write_buffer(read_buffer: &[u8], writer: &mut Option<ParCompress<Mgzip>>) {
     };*/
     
 }
-    
+
+
 
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
@@ -1802,9 +1807,9 @@ pub fn demultiplex(
         curr_buffer_end = out_read_barcode_buffer_last[writing_samples[sample_id]];
         // this works for mgi format and unde and ambig and ilumina with a bit of extr
         if curr_buffer_end + read_end - header_start + illumina_header_template_bytes.len() >= writing_buffer_size{
-            write_buffer(&out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end],
+            write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end],
                 &mut output_barcode_file_writers[writing_samples[sample_id]]);
-            curr_buffer_end = 0; 
+            curr_buffer_end = 0;            
         }
 
 
@@ -1868,7 +1873,7 @@ pub fn demultiplex(
             
             curr_buffer_end = out_paired_read_buffer_last[writing_samples[sample_id]];
             if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_template_bytes.len() + curr_barcode.len() + curr_umi.len() + 15 >= writing_buffer_size{
-                write_buffer(&out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end],
+                write_buffer(&mut out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end],
                     &mut output_paired_file_writers[writing_samples[sample_id]]);
                 curr_buffer_end = 0; 
             }
@@ -1892,34 +1897,7 @@ pub fn demultiplex(
             header_start_pr = read_end_pr + 1;
         }
 
-        /*
-            if sample_id < undetermined_label_id && illumina_format && read2_has_sequence {
-                let illumina_headers_elements =
-                convert_read_header_to_illumina(&read_barcode_header, &curr_umi);
-                read_barcode_header = illumina_header_template_p1.clone();
-                read_barcode_header.push_str(&illumina_headers_elements);
-                read_barcode_header.push_str(&curr_barcode);
-                read_barcode_header.push('\n');    
-            }
-            if sample_id < undetermined_label_id && read2_has_sequence && trim_barcode{
-                read_barcode_seq.truncate(read_barcode_seq.len() - barcode_length - 1);
-                read_barcode_seq.push('\n');
-                read_barcode_quality_score.truncate(read_barcode_quality_score.len() - barcode_length - 1);
-                read_barcode_quality_score.push('\n');
-                
-            }
-
-            if sample_id < undetermined_label_id && illumina_format {
-                let illumina_headers_elements =
-                    convert_read_header_to_illumina(&paired_read_header, &curr_umi);
-                paired_read_header = illumina_header_template_p1.clone();
-                paired_read_header.push_str(&illumina_headers_elements);
-                paired_read_header.push_str(&curr_barcode);
-                paired_read_header.push('\n');
         
-            }
-        */
-
 
         
         read_cntr += 1;
@@ -1964,7 +1942,7 @@ pub fn demultiplex(
         {
             if !single_read_input {
                 if out_paired_read_buffer_last[writing_samples[sample_id]] > 0 {
-                    write_buffer(&out_paired_read_buffer[writing_samples[sample_id]][..out_paired_read_buffer_last[writing_samples[sample_id]]],
+                    write_buffer(&mut out_paired_read_buffer[writing_samples[sample_id]][..out_paired_read_buffer_last[writing_samples[sample_id]]],
                         &mut output_paired_file_writers[writing_samples[sample_id]]);
                     out_paired_read_buffer_last[writing_samples[sample_id]] = 0;
                 }
@@ -1977,7 +1955,7 @@ pub fn demultiplex(
             }
     
             if out_read_barcode_buffer_last[writing_samples[sample_id]] > 0{
-                write_buffer(&out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]],
+                write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]],
                       &mut output_barcode_file_writers[writing_samples[sample_id]]
                 );
                 out_read_barcode_buffer_last[writing_samples[sample_id]] = 0;                 
