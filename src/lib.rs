@@ -8,6 +8,7 @@ use std::path::Path;
 use std::fs::File;
 use std::time::Instant;
 use flate2::read::MultiGzDecoder;
+use gzp::ZBuilder;
 use std::io::{self, BufRead, Read};
 use std::fs::OpenOptions;
 use std::io::{BufReader, Write, BufWriter};
@@ -15,13 +16,12 @@ use chrono::prelude::*;
 use std::fs;
 use gzp::{
     deflate::Mgzip,
+    deflate::Gzip,
     par::compress::{ParCompress, ParCompressBuilder},
     ZWriter,
     Compression
 };
 
-use fastq::{each_zipped, parse_path, Record};
-use rayon::prelude::*;
 use memchr::memchr;
 
 // my modules
@@ -37,26 +37,7 @@ use crate::index_dic::*;
 const BUFFER_SIZE: usize = 1 << 17;
 //const QUEUELEN: usize = 2;
 
-
-fn write_reads(reads_buffer: &Vec<String>, output_file: &String) {
-    //return;
-    //println!("Writing {}", output_file);
-    //let append = true;
-    let output_file_path = Path::new(output_file);
-    //let chunksize = 64 * (1 << 10) * 2;
-    let outfile = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(output_file_path)
-        .expect("couldn't create output");
-
-    let mut writer: ParCompress<Mgzip> = ParCompressBuilder::new().from_writer(outfile);
-
-    for read_inf in reads_buffer {
-        writer.write_all(&read_inf.as_bytes()).unwrap();
-    }
-    writer.finish().unwrap();
-}
+const HEADER_TAIL: [u8; 5] = [b':', b'N', b':', b'0', b':'];
 
 fn check_file(path_str: &String) {
     if !Path::new(path_str).exists() {
@@ -69,62 +50,9 @@ fn create_folder(path_str: &String) {
     fs::create_dir_all(path_str).unwrap();
 }
 
-fn convert_read_header_to_illumina(mgi_read_header: &String, umi: &String) -> String {
-    
-    //println!("header: {}", &mgi_read_header);
-    let mut header_itr = 0;
-    let mut l_position = 0;
-    for header_chr in mgi_read_header.chars().rev() {
-        if header_chr == 'L' {
-            l_position = header_itr;
-            break;
-        }
-
-        header_itr += 1;
-    }
-
-    let mut output = String::from(":");
-    output.push_str(&mgi_read_header[1..(mgi_read_header.len() - l_position - 1)]);
-    //output.push_str(&"V350015219");
-    
-    output.push(':');
-    output.push_str(
-        &mgi_read_header
-            [(mgi_read_header.len() - l_position)..(mgi_read_header.len() - l_position + 1)],
-    );
-    output.push(':');
-    output.push_str(
-        &mgi_read_header[(mgi_read_header.len() - l_position + 9)..(mgi_read_header.len() - 3)]
-            .parse::<i32>()
-            .unwrap()
-            .to_string(),
-    );
-    output.push(':');
-    output.push_str(
-        &mgi_read_header
-            [(mgi_read_header.len() - l_position + 2)..(mgi_read_header.len() - l_position + 5)]
-            .parse::<i32>()
-            .unwrap()
-            .to_string(),
-    );
-    output.push(':');
-    output.push_str(
-        &mgi_read_header
-            [(mgi_read_header.len() - l_position + 6)..(mgi_read_header.len() - l_position + 9)]
-            .parse::<i32>()
-            .unwrap()
-            .to_string(),
-    );
-    output.push_str(&umi);
-    output.push(' ');
-    output.push_str(&mgi_read_header[(mgi_read_header.len() - 2)..(mgi_read_header.len() - 1)]);
-    output.push_str(&":N:0:");
-    output
-}
-
 fn write_illumina_header(output_buffer: &mut [u8], mut buffer_end: usize, mgi_read_header: &[u8], umi: &[u8], l_position:usize) -> usize {
     
-    let tail = [b':', b'N', b':', b'0', b':'];
+    
     output_buffer[buffer_end] = mgi_read_header[l_position + 1];
     buffer_end += 1;
 
@@ -188,7 +116,7 @@ fn write_illumina_header(output_buffer: &mut [u8], mut buffer_end: usize, mgi_re
     buffer_end += 1;
     
 
-    output_buffer[buffer_end..buffer_end + 5].copy_from_slice(&tail[..]);
+    output_buffer[buffer_end..buffer_end + 5].copy_from_slice(&HEADER_TAIL[..]);
     buffer_end += 5;
     buffer_end
 
@@ -410,8 +338,6 @@ pub fn write_index_info_report(sample_information:&Vec<Vec<String>>, sample_mism
         
 }
 
-
-
 fn copy_within_a_slice<T: Clone>(v: &mut [T], from: usize, to: usize, len: usize) {
     if from > to {
         let (dst, src) = v.split_at_mut(from);
@@ -423,128 +349,7 @@ fn copy_within_a_slice<T: Clone>(v: &mut [T], from: usize, to: usize, len: usize
 }
 
 /*
-fn refill_and_search_1 (reader: &mut dyn Read, 
-                        buffer: &mut[u8], 
-                        start: usize, 
-                        end: usize, 
-                        last_read_header: usize, 
-                        refill: bool) -> (usize, usize, usize) {
-    if refill{
-        let mut bytes = 0;
-        loop {
-            let len = end - last_read_header;
-            if last_read_header > 0 {
-                copy_within_a_slice(buffer, last_read_header, 0, len);
-                last_read_header = 0;
-            }
-            let curr_bytes = reader.read(&mut buffer[len..]).unwrap();
-            if bytes == 0{
-                return (start, 0, 0, 0);
-            }
-            end = bytes + len;
-            match memchr(b'\n', &buffer[len..len + bytes]) {
-                None => {
-                    panic!("Invalid fastq files, number of reads is not the same in both files.");
-                },
-                Some(loc) => (0, bytes + len, loc + len + 1, 0)
-            }
-        }
-        
-    }else{
-        (start, 0, 0, last_read_header)
-    }
-}
-
-fn refill_and_search (reader: &mut dyn Read, 
-    buffer: &mut[u8], 
-    start: usize, 
-    end: usize, 
-    last_read_header: usize, 
-    refill: bool) -> (usize, usize, usize) {
-    if refill{
-        
-        let mut curr_bytes: usize;
-        let mut last_read_part = end - last_read_header;
-            
-        loop {
-            if last_read_part == BUFFER_SIZE{
-                panic!("One read longer than {}! it is unexpected!", BUFFER_SIZE);
-            }
-            if last_read_header > 0 {
-                copy_within_a_slice(buffer, last_read_header, 0, last_read_part);
-                
-            }
-
-            curr_bytes = reader.read(&mut buffer[last_read_part..]).unwrap();
-            if curr_bytes == 0{
-                return (start, 0, 0, 0);
-            }
-            end = curr_bytes + last_read_part;
-            match memchr(b'\n', &buffer[last_read_part..end]) {
-                None => {},
-                Some(loc) => {return (0, end, loc + last_read_part + 1, 0);}
-            }
-            last_read_part = end
-        }
-    }else{
-        return (start, 0, 0, last_read_header);
-    }
-}
-
-
-fn find_start_of_line(reader: &mut dyn Read , buffer: &mut[u8], start:usize, end: usize, last_read_header:usize,
-     refill: bool) -> (usize, usize, usize, usize) {
-    println!("ZII: {} - {}", start, end);
-    
-    match memchr(b'\n', &buffer[start..end]) {
-        None => {
-            refill_and_search(reader, buffer, start, end, last_read_header, refill)
-        },
-        Some(loc) => {
-            if loc == end{
-                // read ends at the end of the buffer
-                let bytes = reader.read(buffer).unwrap();
-                if bytes == 0{
-                    return (start, 0, 0, last_read_header);
-                }else{
-                    return (start, bytes, 0);
-                }
-            }
-            (start, end, loc + start + 1, last_read_header)
-        }
-    }
-}
-*/
-
-fn find_end_of_line(reader: &mut Box<dyn Read> , buffer: &mut[u8], start:&mut usize, end: &mut usize, header_start:&mut usize) -> usize {
-    println!("ZII: {} - {}", start, end);
-    let mut curr_bytes;
-    loop {
-        match memchr(b'\n', &buffer[*start..*end]) {
-            None => {
-                if *end >= BUFFER_SIZE {
-                    panic!("Something wrong in this file, reached end of buffer!");
-                }
-                if *header_start > 0 {
-                    copy_within_a_slice(buffer, *header_start, 0, *end - *header_start);
-                    *start -= *header_start;
-                    *header_start = 0;
-                    *end -= *header_start;
-                    
-                }
-                curr_bytes = reader.read(&mut buffer[*end..]).unwrap();
-                if curr_bytes == 0{
-                    return BUFFER_SIZE;
-                }
-                *end += curr_bytes;
-            },
-            Some(loc) => {return loc - *header_start;}
-        }
-    }
-   
-}
-
-fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<ParCompress<Mgzip>>) {
+fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<dyn ZWriter>) {
     match writer{
             Some(ref mut curr_writer) => {
                 curr_writer.write_all(read_buffer).unwrap()
@@ -561,7 +366,7 @@ fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<ParCompress<Mgzip>>) 
     
 }
 
-
+*/
 
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
@@ -590,8 +395,7 @@ pub fn demultiplex(
     arg_run: &String,
     disable_illumina_format: bool,
     keep_barcode: bool,
-    writing_threshold: usize,
-    read_merging_threshold: usize,
+    writing_buffer_size: usize,
     comprehensive_scan: bool,
     undetermined_label: &String,
     ambiguous_label: &String,
@@ -860,7 +664,6 @@ pub fn demultiplex(
     println!("Trim Barcode: {}", trim_barcode);
 
     // writing_threshold: usize, read_merging_threshold
-    let writing_buffer_size :usize = read_merging_threshold;  
     println!("Output buffer size: {}", writing_buffer_size);
 
     //let mut sample_output_buffer_read_barcode: HashMap<String, (Vec<u32>, String)> = HashMap::new();
@@ -986,22 +789,12 @@ pub fn demultiplex(
     
     let barcode_read_actual_length = (barcode_read_length - barcode_length) as u64;
     let paired_read_length_64 = paired_read_length as u64;
-    let barcode_read_length_64 = barcode_read_length as u64;
+    //let barcode_read_length_64 = barcode_read_length as u64;
     let barcode_length_u64 = barcode_length as u64;
 
     //println!("{}, {}, {}, {}, {}", barcode_read_length_64, paired_read_length_64, 
     //    barcode_read_actual_length, barcode_length, barcode_length_u64);
     
-    let mut read_barcode_header = String::new();
-    let mut read_barcode_seq= String::new();
-    let mut read_barcode_plus= String::new();
-    let mut read_barcode_quality_score= String::new();;
-
-    let mut paired_read_header= String::new();
-    let mut paired_read_seq= String::new();
-    let mut paired_read_plus= String::new();
-    let mut paired_read_quality_score= String::new();
-
     let mut extract_umi;
     //let mut read_bytes;
 
@@ -1021,8 +814,8 @@ pub fn demultiplex(
         false => 0
     };
 
-    let mut output_barcode_file_writers: Vec<Option<ParCompress<Mgzip>>> = Vec::new();
-    let mut output_paired_file_writers: Vec<Option<ParCompress<Mgzip>>> = Vec::new();
+    let mut output_barcode_file_writers: Vec<Option<Box<dyn ZWriter>>> = Vec::new();
+    let mut output_paired_file_writers: Vec<Option<Box<dyn ZWriter>>> = Vec::new();
 
     for i in 0..sample_information.len(){
         sample_mismatches.push(vec![0; 2 * allowed_mismatches + 2]);
@@ -1076,8 +869,9 @@ pub fn demultiplex(
             .create(true)
             .open(output_file_path)
             .expect("couldn't create output");
-            let writer: ParCompress<Mgzip> = ParCompressBuilder::new()
+            let writer = ZBuilder::<Gzip, _>::new()
             .compression_level(Compression::new(2))
+            .num_threads(1)
             .from_writer(outfile);
             output_barcode_file_writers.push(Some(writer));
             
@@ -1089,8 +883,9 @@ pub fn demultiplex(
                 .create(true)
                 .open(output_file_path)
                 .expect("couldn't create output");
-                let writer: ParCompress<Mgzip> = ParCompressBuilder::new()
+                let writer = ZBuilder::<Gzip, _>::new()
                 .compression_level(Compression::new(2))
+                .num_threads(1)
                 .from_writer(outfile);
                 output_paired_file_writers.push(Some(writer));
             }else{
@@ -1118,8 +913,8 @@ pub fn demultiplex(
     let mut barcode_read_illumina_header_start:usize = 0;
     let mut barcode_read_illumina_header_end:usize = 0;
     //let mut indexes_info;
-    let mut i7_read: String;
-    let mut i5_read: String;
+    //let mut i7_read: String;
+    //let mut i5_read: String;
     let mut read_cntr:u64 = 0;
     let mut curr_mismatch: usize;
     let mut latest_mismatch:usize;
@@ -1130,7 +925,7 @@ pub fn demultiplex(
     let mut ambiguous_barcodes: HashMap<String, u32> = HashMap::new();
     //println!("start looping");
     //let mut last_piece;
-    let mut template_itr = 0;
+    //let mut template_itr = 0;
 
     //let mut flowcell = String::from("V350015219");
     
@@ -1142,12 +937,8 @@ pub fn demultiplex(
     let start = Instant::now();
     let dur;
     
-    //timing measures
-    let mut read_secs:u128 = 0;
-    let mut work_secs:u128 = 0;
-    let mut writing_secs:u128 = 0;
-
-    let threads :usize = 1;
+    
+    //let threads :usize = 1;
 
     
     
@@ -1157,7 +948,7 @@ pub fn demultiplex(
      
     
     let mut reader_paired_read = if !single_read_input {
-        let (mut s1, _) = niffler::get_reader(Box::new(std::fs::File::open(paired_read_file_path_final).unwrap())).unwrap();
+        let (s1, _) = niffler::get_reader(Box::new(std::fs::File::open(paired_read_file_path_final).unwrap())).unwrap();
         Some(s1)
     } else {
         None
@@ -1177,9 +968,8 @@ pub fn demultiplex(
         }
     }else{0};
     
-    let mut buffer_1_start = 0;
-    let mut header_start_pr = buffer_1_start;
-    let mut buffer_2_start = 0;
+    //let mut buffer_1_start = 0;
+    //let mut buffer_2_start = 0;
         
     let mut read_bytes_2 = reader_barcode_read.read(&mut buffer_2).unwrap();
     //read_bytes_2 = 200;
@@ -1190,23 +980,23 @@ pub fn demultiplex(
         
 
     let mut header_start: usize = 0;
-    let mut read_end: usize = 0;
-    let mut curr_bytes:usize = 0;
-    let mut read_end: usize = 0;
+    let mut read_end: usize;
+    let mut curr_bytes:usize;
     let mut read_end_pr: usize = 0;
-    let mut seq_start: usize = 0;
-    let mut plus_start: usize = 0;
-    let mut qual_start: usize = 0;
+    let mut seq_start: usize;
+    let mut plus_start: usize;
+    let mut qual_start: usize;
     let mut header_start_pr: usize = 0;
     let mut seq_start_pr: usize = 0;
-    let mut plus_start_pr: usize = 0;
+    let mut plus_start_pr: usize;
     let mut qual_start_pr: usize = 0;
-    let mut end_of_read = 0;
-    let mut breaking_limit:usize = BUFFER_SIZE;
+    //let mut end_of_read: usize = 0;
     
-    let mut samples_reads: Vec<Vec<u8>> = Vec::new();
+
+    //let mut samples_reads: Vec<Vec<u8>> = Vec::new();
     let mut curr_buffer_end;
-    let mut curr_buffer_copied_len:usize;
+    //let mut curr_buffer_copied_len:usize;
+    let mut template_itr:usize;
     loop {   
         match memchr(b'\n', &buffer_2[header_start..read_bytes_2]) {
             None => {
@@ -1807,8 +1597,21 @@ pub fn demultiplex(
         curr_buffer_end = out_read_barcode_buffer_last[writing_samples[sample_id]];
         // this works for mgi format and unde and ambig and ilumina with a bit of extr
         if curr_buffer_end + read_end - header_start + illumina_header_template_bytes.len() >= writing_buffer_size{
+            /*
             write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end],
                 &mut output_barcode_file_writers[writing_samples[sample_id]]);
+            
+            */
+            match output_barcode_file_writers[writing_samples[sample_id]]{
+                    Some(ref mut curr_writer) => {
+                        curr_writer.write_all(&out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
+                        //io::copy( read_buffer, curr_writer).unwrap()
+                    },
+                    
+                    None => panic!("expeted a writer, but None found!")
+            };
+            
+            
             curr_buffer_end = 0;            
         }
 
@@ -1822,7 +1625,7 @@ pub fn demultiplex(
             //zz = 0;
             out_read_barcode_buffer_last[writing_samples[sample_id]] = curr_buffer_end + read_end - header_start + 1;
             
-        }else
+        }else if read2_has_sequence
         {
             if illumina_format{
                 // Illumina format write the heder and skip the header for mgi.
@@ -1842,8 +1645,7 @@ pub fn demultiplex(
                 header_start = seq_start - 1; 
             }        
             
-            
-            
+                        
             out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
                 copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
     
@@ -1873,8 +1675,19 @@ pub fn demultiplex(
             
             curr_buffer_end = out_paired_read_buffer_last[writing_samples[sample_id]];
             if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_template_bytes.len() + curr_barcode.len() + curr_umi.len() + 15 >= writing_buffer_size{
+                /*
                 write_buffer(&mut out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end],
                     &mut output_paired_file_writers[writing_samples[sample_id]]);
+                */
+                match output_paired_file_writers[writing_samples[sample_id]]{
+                    Some(ref mut curr_writer) => {
+                        curr_writer.write_all(&out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
+                        //io::copy( read_buffer, curr_writer).unwrap()
+                    },
+                    
+                    None => panic!("expeted a writer, but None found!")
+                };
+            
                 curr_buffer_end = 0; 
             }
 
@@ -1883,7 +1696,6 @@ pub fn demultiplex(
                 copy_from_slice(&out_read_barcode_buffer[writing_samples[sample_id]][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
                 curr_buffer_end += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
                 out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
-                header_start = seq_start - 1;
                 header_start_pr = seq_start_pr - 1;
             }
 
@@ -1942,8 +1754,19 @@ pub fn demultiplex(
         {
             if !single_read_input {
                 if out_paired_read_buffer_last[writing_samples[sample_id]] > 0 {
+                    /* 
                     write_buffer(&mut out_paired_read_buffer[writing_samples[sample_id]][..out_paired_read_buffer_last[writing_samples[sample_id]]],
                         &mut output_paired_file_writers[writing_samples[sample_id]]);
+                    */
+                    match output_paired_file_writers[writing_samples[sample_id]]{
+                        Some(ref mut curr_writer) => {
+                            curr_writer.write_all(&out_paired_read_buffer[writing_samples[sample_id]][..out_paired_read_buffer_last[writing_samples[sample_id]]]).unwrap()
+                            //io::copy( read_buffer, curr_writer).unwrap()
+                        },
+                        
+                        None => panic!("expeted a writer, but None found!")
+                    };
+                    
                     out_paired_read_buffer_last[writing_samples[sample_id]] = 0;
                 }
                 
@@ -1955,9 +1778,19 @@ pub fn demultiplex(
             }
     
             if out_read_barcode_buffer_last[writing_samples[sample_id]] > 0{
-                write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]],
+                /*write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]],
                       &mut output_barcode_file_writers[writing_samples[sample_id]]
-                );
+                );*/
+
+                match output_barcode_file_writers[writing_samples[sample_id]]{
+                    Some(ref mut curr_writer) => {
+                        curr_writer.write_all(&out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]]).unwrap()
+                        //io::copy( read_buffer, curr_writer).unwrap()
+                    },
+                    
+                    None => panic!("expeted a writer, but None found!")
+            };
+            
                 out_read_barcode_buffer_last[writing_samples[sample_id]] = 0;                 
             }
     
@@ -1969,7 +1802,7 @@ pub fn demultiplex(
         }
         
     }
-
+    
     dur = start.elapsed();
     
     println!("{} reads were processed in {} secs.", read_cntr, dur.as_secs());

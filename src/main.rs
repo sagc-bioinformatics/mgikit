@@ -139,15 +139,8 @@ fn main() {
                         .help("Keep the barcode at the tail of read sequence.")
                 )
                 .arg(
-                    Arg::new("arg_writing_threshold")
-                        .long("writing-buffer")
-                        .default_value("1")
-                        .value_parser(clap::value_parser!(usize))
-                        .help("The number of merged reads that when reached, data will be saved.")
-                )
-                .arg(
-                    Arg::new("arg_read_merging_threshold")
-                        .long("merged-reads")
+                    Arg::new("arg_writing_buffer_size")
+                        .long("writing-buffer-size")
                         .default_value("648686")
                         .value_parser(clap::value_parser!(usize))
                         .help("The number of reads that will be merged in one string before writng.")
@@ -342,8 +335,7 @@ fn main() {
                 let arg_run: &String = demultiplex_command.get_one::<String>("arg_run").unwrap();
                 let arg_disable_illumina_format: &bool = demultiplex_command.get_one::<bool>("arg_disable_illumina_format").unwrap();
                 let arg_keep_barcode: &bool = demultiplex_command.get_one::<bool>("arg_keep_barcode").unwrap();
-                let arg_writing_threshold: &usize = demultiplex_command.get_one::<usize>("arg_writing_threshold").unwrap();
-                let arg_read_merging_threshold: &usize = demultiplex_command.get_one::<usize>("arg_read_merging_threshold").unwrap();
+                let arg_writing_buffer_size: &usize = demultiplex_command.get_one::<usize>("arg_writing_buffer_size").unwrap();
                 let arg_comprehensive_scan: &bool = demultiplex_command.get_one::<bool>("arg_comprehensive_scan").unwrap();
                 let arg_undetermined_label: &String = demultiplex_command.get_one::<String>("arg_undetermined_label").unwrap();
                 let arg_ambiguous_label: &String = demultiplex_command.get_one::<String>("arg_ambiguous_label").unwrap();
@@ -370,8 +362,7 @@ fn main() {
                     arg_run,
                     *arg_disable_illumina_format,
                     *arg_keep_barcode,
-                    *arg_writing_threshold,
-                    *arg_read_merging_threshold,
+                    *arg_writing_buffer_size,
                     *arg_comprehensive_scan,
                     arg_undetermined_label,
                     arg_ambiguous_label,
