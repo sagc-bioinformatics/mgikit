@@ -220,6 +220,13 @@ fn main() {
                         .default_value("2")
                         .value_parser(clap::value_parser!(usize))
                         .help("The level of reporting.")
+                ) 
+                .arg(
+                    Arg::new("arg_compression_level")
+                        .long("compression-level")
+                        .default_value("2")
+                        .value_parser(clap::value_parser!(u32))
+                        .help("The level of compression (between 0 and 9). 0 is fast but no compression, 9 is slow but high compression.")
                 )
         )
         .subcommand(
@@ -345,6 +352,7 @@ fn main() {
                 let arg_read2_file_name_suf: &String = demultiplex_command.get_one::<String>("arg_read2_file_name_suf").unwrap();
                 let arg_info_file: &String = demultiplex_command.get_one::<String>("arg_info_file").unwrap();
                 let arg_report_level: &usize = demultiplex_command.get_one::<usize>("arg_report_level").unwrap();
+                let arg_compression_level: &u32 = demultiplex_command.get_one::<u32>("arg_compression_level").unwrap();
                 
                 demultiplex(
                     arg_input_folder_path,
@@ -371,7 +379,8 @@ fn main() {
                     arg_read1_file_name_suf,
                     arg_read2_file_name_suf,
                     arg_info_file,
-                    *arg_report_level
+                    *arg_report_level,
+                    *arg_compression_level
                 );
             },
             Some(("report", report_command)) => {
