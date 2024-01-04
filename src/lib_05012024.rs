@@ -1,4 +1,3 @@
-
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -35,6 +34,7 @@ mod index_dic;
 use crate::index_dic::*;
 
 const BUFFER_SIZE: usize = 1 << 17;
+const HEADER_BUFFER_SIZE: usize = 500;
 //const QUEUELEN: usize = 2;
 
 const HEADER_TAIL: [u8; 5] = [b':', b'N', b':', b'0', b':'];
@@ -50,8 +50,9 @@ fn create_folder(path_str: &String) {
     fs::create_dir_all(path_str).unwrap();
 }
 
-fn write_illumina_header(output_buffer: &mut [u8], mut buffer_end: usize, mgi_read_header: &[u8], umi: &[u8], l_position:usize) -> usize {
+fn write_illumina_header(output_buffer: &mut [u8; HEADER_BUFFER_SIZE], mgi_read_header: &[u8], umi: &[u8], l_position:usize) -> usize {
     
+    let mut buffer_end = 0;
     
     output_buffer[buffer_end] = mgi_read_header[l_position + 1];
     buffer_end += 1;
@@ -118,11 +119,10 @@ fn write_illumina_header(output_buffer: &mut [u8], mut buffer_end: usize, mgi_re
 
     output_buffer[buffer_end..buffer_end + 5].copy_from_slice(&HEADER_TAIL[..]);
     buffer_end += 5;
+
     buffer_end
 
 }
-
-
 
 pub fn write_general_info_report(sample_information:&Vec<Vec<String>>, 
     sample_statistics:&Vec<Vec<u64>>, 
@@ -348,25 +348,7 @@ fn copy_within_a_slice<T: Clone>(v: &mut [T], from: usize, to: usize, len: usize
     }
 }
 
-/*
-fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<dyn ZWriter>) {
-    match writer{
-            Some(ref mut curr_writer) => {
-                curr_writer.write_all(read_buffer).unwrap()
-                //io::copy( read_buffer, curr_writer).unwrap()
-            },
-            
-            None => panic!("expeted a writer, but None found!")
-    };
-    
-    /*match writer{
-        Some(ref mut curr_writer) => {curr_writer.finish().unwrap();},
-        None => panic!("expeted a writer, but None found!")
-    };*/
-    
-}
 
-*/
 
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
@@ -491,9 +473,6 @@ pub fn demultiplex(
         println!("Paired ended read input was detected!");
     }
     
-
-    
-
 
     if read_barcode_file_path_final.len() == 0 {
         panic!("Input reads are invalid! check the path {}", read_barcode_file_path_final);
@@ -867,30 +846,19 @@ pub fn demultiplex(
 
             
             let output_file_path = Path::new(&tmp);
-            let outfile = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(output_file_path)
-            .expect("couldn't create output");
-            
-            let writer = ZBuilder::<Gzip, _>::new()
+            let writer = ZBuilder::<Mgzip, _>::new()
             .compression_level(Compression::new(compression_level))
             //.num_threads(1)
-            .from_writer(outfile);
+            .from_writer(Box::new(BufWriter::with_capacity(writing_buffer_size, File::create(output_file_path).unwrap())));
             output_barcode_file_writers.push(Some(writer));
             
 
             if !single_read_input {
                 let output_file_path = Path::new(&tmp1);
-                let outfile = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(output_file_path)
-                .expect("couldn't create output");
-                let writer = ZBuilder::<Gzip, _>::new()
+                let writer = ZBuilder::<Mgzip, _>::new()
                 .compression_level(Compression::new(compression_level))
                 //.num_threads(1)
-                .from_writer(outfile);
+                .from_writer(Box::new(BufWriter::with_capacity(writing_buffer_size, File::create(output_file_path).unwrap())));
                 output_paired_file_writers.push(Some(writer));
             }else{
                 output_paired_file_writers.push(None);
@@ -914,8 +882,6 @@ pub fn demultiplex(
 
     //let mut curr_template;
     let mut sample_id;
-    let mut barcode_read_illumina_header_start:usize = 0;
-    let mut barcode_read_illumina_header_end:usize = 0;
     //let mut indexes_info;
     //let mut i7_read: String;
     //let mut i5_read: String;
@@ -995,10 +961,10 @@ pub fn demultiplex(
     let mut plus_start_pr: usize;
     let mut qual_start_pr: usize = 0;
     //let mut end_of_read: usize = 0;
-    
+    let mut illumina_header_tmp: [u8; HEADER_BUFFER_SIZE] = [0; HEADER_BUFFER_SIZE];
+    let mut illumina_header_size: usize = 0;
 
     //let mut samples_reads: Vec<Vec<u8>> = Vec::new();
-    let mut curr_buffer_end;
     //let mut curr_buffer_copied_len:usize;
     let mut template_itr:usize;
     loop {   
@@ -1598,70 +1564,34 @@ pub fn demultiplex(
         sample_mismatches[sample_id][curr_mismatch + 1] += 1;
 
         // writing preperation
-        curr_buffer_end = out_read_barcode_buffer_last[writing_samples[sample_id]];
-        // this works for mgi format and unde and ambig and ilumina with a bit of extr
-        if curr_buffer_end + read_end - header_start + illumina_header_template_bytes.len() >= writing_buffer_size{
-            /*
-            write_buffer(&mut out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end],
-                &mut output_barcode_file_writers[writing_samples[sample_id]]);
-            
-            */
-            match output_barcode_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {
-                        curr_writer.write_all(&out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
-                        //io::copy( read_buffer, curr_writer).unwrap()
-                    },
-                    
-                    None => panic!("expeted a writer, but None found!")
-            };
-            
-            
-            curr_buffer_end = 0;            
-        }
-
-
-
-
         if sample_id >= undetermined_label_id{
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
-                    copy_from_slice(&buffer_2[header_start..read_end + 1]);
-        
-            //zz = 0;
-            out_read_barcode_buffer_last[writing_samples[sample_id]] = curr_buffer_end + read_end - header_start + 1;
-            
+            match output_barcode_file_writers[writing_samples[sample_id]]{
+                Some(ref mut curr_writer) => {
+                    curr_writer.write_all(&buffer_2[header_start..read_end + 1]).unwrap()
+                    //io::copy( read_buffer, curr_writer).unwrap()
+                },
+                None => panic!("expeted a writer, but None found!")
+            };            
         }else if read2_has_sequence
         {
-            if illumina_format{
-                // Illumina format write the heder and skip the header for mgi.
-                barcode_read_illumina_header_start = curr_buffer_end;
-                out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + illumina_header_template_bytes.len()].
-                copy_from_slice(&illumina_header_template_bytes[..]);
-                curr_buffer_end += illumina_header_template_bytes.len();
-    
-                curr_buffer_end = write_illumina_header(&mut out_read_barcode_buffer[writing_samples[sample_id]], 
-                    curr_buffer_end, &buffer_2[header_start..seq_start], 
-                                        &curr_umi.as_bytes(), l_position);
-               
-                out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
-                    .copy_from_slice(&curr_barcode.as_bytes());
-                curr_buffer_end += curr_barcode.len();
-                barcode_read_illumina_header_end = curr_buffer_end;
-                header_start = seq_start - 1; 
-            }        
-            
-                        
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
-                copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
-    
-            curr_buffer_end += plus_start - header_start - writen_barcode_length - 1;
-                    
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
-                        copy_from_slice(&buffer_2[plus_start - 1..read_end - writen_barcode_length]);
+            match output_barcode_file_writers[writing_samples[sample_id]]{
+                Some(ref mut curr_writer) => {
+                    if illumina_format{
+                        // Illumina format write the heder and skip the header for mgi.
+                        curr_writer.write_all(&illumina_header_template_bytes[..]).unwrap();
+                        illumina_header_size = write_illumina_header(&mut illumina_header_tmp, &buffer_2[header_start..seq_start], &curr_umi.as_bytes(), l_position);
+                        curr_writer.write_all(&illumina_header_tmp[..illumina_header_size]).unwrap();
+                        curr_writer.write_all(&curr_barcode.as_bytes()).unwrap();
+                        header_start = seq_start - 1;
+                    }
+
+                    curr_writer.write_all(&buffer_2[header_start..plus_start - writen_barcode_length - 1]).unwrap();
+                    curr_writer.write_all(&buffer_2[plus_start - 1..read_end - writen_barcode_length]).unwrap();
+                    curr_writer.write_all(&[b'\n']).unwrap();
+                },
+                None => panic!("expeted a writer, but None found!")
+            };
                 
-            curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end - 1] = b'\n';
-            out_read_barcode_buffer_last[writing_samples[sample_id]] = curr_buffer_end;
-    
                 /*curr_barcode = unsafe {
                     String::from_utf8_unchecked(buffer_2[header_start..header_start + curr_buffer_copied_len].to_vec())
                 };
@@ -1676,40 +1606,23 @@ pub fn demultiplex(
         }
         
         if ! single_read_input{
-            
-            curr_buffer_end = out_paired_read_buffer_last[writing_samples[sample_id]];
-            if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_template_bytes.len() + curr_barcode.len() + curr_umi.len() + 15 >= writing_buffer_size{
-                /*
-                write_buffer(&mut out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end],
-                    &mut output_paired_file_writers[writing_samples[sample_id]]);
-                */
-                match output_paired_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {
-                        curr_writer.write_all(&out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
-                        //io::copy( read_buffer, curr_writer).unwrap()
-                    },
-                    
-                    None => panic!("expeted a writer, but None found!")
-                };
-            
-                curr_buffer_end = 0; 
-            }
-
-            if illumina_format && sample_id < undetermined_label_id{
-                out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
-                copy_from_slice(&out_read_barcode_buffer[writing_samples[sample_id]][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
-                curr_buffer_end += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
-                out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
-                header_start_pr = seq_start_pr - 1;
-            }
-
-            
-            out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
-                copy_from_slice(&buffer_1[header_start_pr..read_end_pr + 1]);
+            match output_paired_file_writers[writing_samples[sample_id]]{
+                Some(ref mut curr_writer) => {
+                    if illumina_format && sample_id < undetermined_label_id{
+                        
+                        curr_writer.write_all(&illumina_header_template_bytes[..]).unwrap();
+                        illumina_header_tmp[illumina_header_size - 6] =  buffer_1[seq_start_pr - 2];
+                        curr_writer.write_all(&illumina_header_tmp[..illumina_header_size]).unwrap();
+                        curr_writer.write_all(&curr_barcode.as_bytes()).unwrap();
+                        header_start_pr = seq_start_pr - 1;
+                    }
+        
+                    curr_writer.write_all(&buffer_1[header_start_pr..read_end_pr + 1]).unwrap()     
+                },
                 
-                //zz = 0;
-            out_paired_read_buffer_last[writing_samples[sample_id]] = curr_buffer_end + read_end_pr - header_start_pr + 1;
-                
+                None => panic!("expeted a writer, but None found!")
+            };
+
             header_start_pr = read_end_pr + 1;
         }
 
