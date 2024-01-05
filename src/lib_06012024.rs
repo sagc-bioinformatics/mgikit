@@ -33,9 +33,7 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
-const BUFFER_SIZE: usize = 1 << 20;
-const BUFFER_SIZE_MIN:usize = 1000000;
-
+const BUFFER_SIZE: usize = 1 << 17;
 //const QUEUELEN: usize = 2;
 
 const HEADER_TAIL: [u8; 5] = [b':', b'N', b':', b'0', b':'];
@@ -703,22 +701,39 @@ pub fn demultiplex(
     //println!("{:?}", all_i5s);
     //return;
 
+    //let mut read_barcode_data = BGZFReader::new(File::open(path_to_read2).expect("Could not open the file"));
+    //let mut read_barcode_data = BufReader::new(ConsecutiveReader:: from_path(path_to_read2, 0).expect("Could not open the file"));
+    // both above works fine on Bgzip
+    //let mut read_barcode_data = BufReader::new(GzDecoder::new(File::open(path_to_read2).expect("Could not open the file")));
+    // this above works for gzip files.
 
-    //  Get reads information 
+    // this above works for gzip files.
+    /*
+    let mut lines = 0;
+    loop
+    {
+        let mut line = String::new();
+        let read_bytes = read_barcode_data.read_line(&mut line).unwrap();
+        println!("{} - {} ", lines, read_bytes);
+        if read_bytes == 0 {
+            println!("bytes: {}", read_bytes);
+            break;
+        }
+        lines += 1;
+    }
 
-    let mut whole_read_barcode_len = 0;
-    let mut whole_paired_read_len = 0;
+    return;
+    */
+
     let mut tmp_str = String::new();
     let barcode_read_length: usize;
     let paired_read_length;
     let mut read2_has_sequence = true;
-    let mut only_plus_r1:bool = false;
-
+    
     let mut read_barcode_data = BufReader::new(MultiGzDecoder::new(
         File::open(Path::new(&read_barcode_file_path_final)).expect("Could not open the file")
     ));
     read_barcode_data.read_line(&mut tmp_str).unwrap();
-    whole_read_barcode_len += tmp_str.len();
     
     let mut l_position = tmp_str.len() - 1;
     for header_chr in tmp_str.chars().rev() {
@@ -741,19 +756,8 @@ pub fn demultiplex(
     
     tmp_str = String::new();
     read_barcode_data.read_line(&mut tmp_str).unwrap();
-    whole_read_barcode_len += tmp_str.len();
     barcode_read_length = tmp_str.chars().count() - 1;
-    
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
-    whole_read_barcode_len += tmp_str.len();
-    
-    let only_plus_r2:bool = tmp_str == "+\n";
-    
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
-    whole_read_barcode_len += tmp_str.len();
-    
+
     let mut paired_read_data = if !single_read_input {
         Some(BufReader::new(MultiGzDecoder::new(
             File::open(Path::new(&paired_read_file_path_final)).expect("Could not open the file")
@@ -764,24 +768,10 @@ pub fn demultiplex(
     
     match paired_read_data.as_mut() {
         Some(paired_read_data_buff) => {
-            tmp_str = String::new();
             paired_read_data_buff.read_line(&mut tmp_str).unwrap();
-            whole_paired_read_len += tmp_str.len();
-            
             tmp_str = String::new();
             paired_read_data_buff.read_line(&mut tmp_str).unwrap();
             paired_read_length = tmp_str.chars().count() - 1;
-            whole_paired_read_len += tmp_str.len();
-            
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
-            whole_paired_read_len += tmp_str.len();
-            only_plus_r1 = tmp_str == "+\n";
-            
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
-            whole_paired_read_len += tmp_str.len();
-            
         },
         None => {
             paired_read_length = 0;
@@ -970,41 +960,21 @@ pub fn demultiplex(
 
     let mut buffer_1 = [0; BUFFER_SIZE];  // paired read
     let mut buffer_2 = [0; BUFFER_SIZE]; // read with barcode
-    let mut curr_bytes:usize;
+
     // read up to 10 bytes
     
     
-    let mut read_bytes_1: usize = 0;
-    if !single_read_input{
+    let mut read_bytes_1 = if !single_read_input{
         match reader_paired_read{
-            Some(ref mut reader) => {
-                while read_bytes_1 < BUFFER_SIZE_MIN{
-                    curr_bytes = curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                    if curr_bytes == 0{
-                        break;
-                    }
-                    read_bytes_1 += curr_bytes;
-                }
-                
-            },
-            None => panic!("expected single end input!")
+            Some(ref mut reader) => reader.read(&mut buffer_1).unwrap(),
+            None => panic!("expected sinle end input!")
         }
-    }
+    }else{0};
     
     //let mut buffer_1_start = 0;
     //let mut buffer_2_start = 0;
         
-    let mut read_bytes_2: usize = 0; 
-    
-    while read_bytes_2 < BUFFER_SIZE_MIN{
-        curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-        if curr_bytes == 0{
-            break;
-        }
-        read_bytes_2 += curr_bytes;
-    }
-    
-    
+    let mut read_bytes_2 = reader_barcode_read.read(&mut buffer_2).unwrap();
     //read_bytes_2 = 200;
     if read_bytes_2 == 0{
         panic!("No data!");
@@ -1014,7 +984,7 @@ pub fn demultiplex(
 
     let mut header_start: usize = 0;
     let mut read_end: usize;
-    
+    let mut curr_bytes:usize;
     let mut read_end_pr: usize = 0;
     let mut seq_start: usize;
     let mut plus_start: usize;
@@ -2549,5 +2519,3 @@ pub fn merge_qc_reports(qc_report_paths: &[String], output_dir: &String){
     //for (sample_id, val) in map.iter_mut() {  }
     
 }
-
-
