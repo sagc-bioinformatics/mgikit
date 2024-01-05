@@ -1657,7 +1657,7 @@ pub fn demultiplex(
             //println!("reading more!");
             //println!("{}---------------------", read_cntr);
             if read_end < read_bytes_2 - 1 && header_start > 0 {
-                copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end);
+                copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end - 1);
                 read_bytes_2 -= read_end + 1;
                 header_start = 0;
             }else if read_end == read_bytes_2 - 1{
