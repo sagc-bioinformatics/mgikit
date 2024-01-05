@@ -33,7 +33,7 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
-const BUFFER_SIZE: usize = 1 << 20;
+const BUFFER_SIZE: usize = 1 << 17;
 const BUFFER_SIZE_MIN:usize = 1000000;
 //1048576
 
@@ -983,14 +983,7 @@ pub fn demultiplex(
     if !single_read_input{
         match reader_paired_read{
             Some(ref mut reader) => {
-                while read_bytes_1 < BUFFER_SIZE_MIN{
-                    curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                    if curr_bytes == 0{
-                        break;
-                    }
-                    read_bytes_1 += curr_bytes;
-                }
-                
+                read_bytes_1 = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();                
             },
             None => panic!("expected single end input!")
         }
@@ -999,16 +992,8 @@ pub fn demultiplex(
     //let mut buffer_1_start = 0;
     //let mut buffer_2_start = 0;
         
-    let mut read_bytes_2: usize = 0; 
-    while read_bytes_2 < BUFFER_SIZE_MIN{
-        curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-        if curr_bytes == 0{
-            break;
-        }
-        read_bytes_2 += curr_bytes;
-    }
-    
-    
+    let mut read_bytes_2: usize =  reader_barcode_read.read(&mut buffer_2[0..]).unwrap();
+            
     //read_bytes_2 = 200;
     if read_bytes_2 == 0{
         panic!("No data!");
@@ -1041,7 +1026,10 @@ pub fn demultiplex(
         qual_start = plus_start + 2;
         read_end = barcode_read_length + qual_start;  // \n position. 
         
-        
+        if buffer_2[seq_start - 1] != b'\n' || buffer_2[plus_start - 1] != b'\n' ||
+        buffer_2[qual_start - 1] != b'\n' || buffer_2[read_end] != b'\n'{
+            panic!("Expected format is not satisified. You can try running demultplex-dynamic command.");
+        }
         /*
         if buffer_2[seq_start - 1] != b'\n' || buffer_2[plus_start - 1] != b'\n' ||
         buffer_2[qual_start - 1] != b'\n' || buffer_2[read_end] != b'\n'{
@@ -1371,7 +1359,11 @@ pub fn demultiplex(
             seq_start_pr = header_start_pr + header_length_r1;
             plus_start_pr = seq_start_pr + paired_read_length + 1;
             qual_start_pr = plus_start_pr + 2;
-            read_end_pr = paired_read_length + qual_start_pr; 
+            read_end_pr = paired_read_length + qual_start_pr;
+            if buffer_1[seq_start_pr - 1] != b'\n' || buffer_1[plus_start_pr - 1] != b'\n' ||
+                buffer_1[qual_start_pr - 1] != b'\n' || buffer_1[read_end_pr] != b'\n'{
+                panic!("Expected format is not satisified. You can try running demultplex-dynamic command.");
+            }
             /*
             if buffer_1[seq_start_pr - 1] != b'\n' || buffer_1[plus_start_pr - 1] != b'\n' ||
             buffer_1[qual_start_pr - 1] != b'\n' || buffer_1[read_end_pr] != b'\n'{
@@ -1633,13 +1625,9 @@ pub fn demultiplex(
                 //println!("Inside R1 @ {}: {}  ->  {} - {}", read_cntr, read_bytes_1, BUFFER_SIZE_MIN,  read_bytes_1 < BUFFER_SIZE_MIN);
                 match reader_paired_read{
                     Some(ref mut reader) => {
-                        while read_bytes_1 < BUFFER_SIZE_MIN{
-                            curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                            if curr_bytes == 0{
-                                break;
-                            }
-                            read_bytes_1 += curr_bytes;
-                        }
+                        curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
+                        read_bytes_1 += curr_bytes;
+                        
                     },
                     None => panic!("expected sinle end input!")
                 };
@@ -1668,14 +1656,9 @@ pub fn demultiplex(
                 panic!("read end should not be greater than the buffer size!");
             }
             //println!("Inside R2 @ {}:  {}  ->  {} - {}", read_cntr, read_bytes_2, BUFFER_SIZE_MIN,  read_bytes_2 < BUFFER_SIZE_MIN);
-            while read_bytes_2 < BUFFER_SIZE_MIN{
-                curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
+            curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
                 //println!("{}  --  {}", curr_bytes, read_bytes_2);
-                if curr_bytes == 0{
-                    break;
-                }
-                read_bytes_2 += curr_bytes;
-            }
+            read_bytes_2 += curr_bytes;
             
             if read_bytes_2 == 0{
                 break;
