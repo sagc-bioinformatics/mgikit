@@ -33,7 +33,7 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
-const BUFFER_SIZE: usize = 1 << 20;
+const BUFFER_SIZE: usize = 1 << 19;
 const BUFFER_SIZE_MIN:usize = 1000000;
 //1048576
 
