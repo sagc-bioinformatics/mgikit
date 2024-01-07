@@ -1,16 +1,16 @@
 [package]
 name = "mgikit"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Ziad Al Bkhetan <ziad.albkhetan@gmail.com>"]
-repository = "https://github.com/ziadbkh/"
+repository = "https://github.com/sagc-bioinformatics/mgikit"
 readme = "README.md"
 keywords = ["fastq", "MGI", "demultiplexing"]
 
 [dependencies]
 flate2 = { version = "1.0.28", features = ["zlib-ng-compat"], default-features = false }
 gzp = { version = "0.11.3", default-features = false, features = ["deflate_zlib_ng"] }
-libz-sys = { version = "1.1.8", default-features = false}
+libz-sys = { version = "1.1.8", default-features = false, features = ["libc"] }
 mimalloc = { version = "0.1.34", default-features = false }
 combinations = "*"
 itertools = "*"
@@ -19,7 +19,6 @@ termion = "2.0.1"
 clap = "4.3.21"
 fastq = "0.6.0"
 rayon = "1.8.0"
-
 niffler = "2.5.0"
 memchr = "2.6.4"
 

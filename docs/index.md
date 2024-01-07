@@ -22,13 +22,15 @@ R1 (forward) reads for single read input. Based on the barcode, it assigns the r
 sample allowing for mismatches less than a specific threshold. The tool outputs fastq files for each sample
 as well as some summary reports that can be visualised through the MultiQC tool and mgikit plugin.
 
+mgikit reports can be parsed by [mgikit-multiqc plugin](https://github.com/sagc-bioinformatics/mgikit-multiqc) to generate an html report using [multiqc](https://multiqc.info/) tool summarising the results of the demultiplexing and the quality of the output data as described [here](/mgikit/mgikit-multiqc).
+
 <hr/>
 
 ### template
 
 This command is used to detect the location and form of the indexes within the read barcode. It simply goes through a small number of the reads and investigates the number of matches with the indexes in the sample sheet within each possible location in the read barcode and considering the indexes as is and their reverse complementary. 
 
-It reports matches for all possible combinations and uses the read template that had the maximum number of matches. This process happens for each sample individually and therefore, the best matching template for each sample will be reported. 
+It reports matches for all possible combinations and uses the read template that has the maximum number of matches. This process happens for each sample individually and therefore, the best matching template for each sample will be reported. 
 
 Using this comprehensive scan, the tool can detect the templates for mixed libraries. 
 
