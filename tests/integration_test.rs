@@ -264,11 +264,11 @@ fn testing_demultiplex() {
             let paths = fs::read_dir(original_path).unwrap();
             for path in paths {
                 println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
-                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap().clone()));
+                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
                 
                 if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
                     
-                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap().clone()));
+                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
                     
                     let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
                     assert_eq!(crc_new, crc_original);
