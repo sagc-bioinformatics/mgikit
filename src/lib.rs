@@ -2,24 +2,21 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::collections::{HashMap,HashSet};
-
+use std::error::Error;
 use std::path::Path;
 use std::fs::File;
 use std::time::Instant;
-use flate2::read::MultiGzDecoder;
 use std::io::{self, BufRead, Read};
 use std::fs::OpenOptions;
 use std::io::{BufReader, Write, BufWriter};
 use chrono::prelude::*;
 use std::fs;
-use gzp::{
-    deflate::Mgzip,
-    par::compress::{ParCompress, ParCompressBuilder},
-    ZWriter,
-    Compression
-};
+use noodles_bgzf as bgzf;
+use memchr::memchr;
+use libdeflater::{Compressor, CompressionLvl};
+use flate2::read::MultiGzDecoder;
 
-//use memchr::memchr;
+
 // my modules
 mod variables;
 use crate::variables::*;
@@ -30,8 +27,13 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
+
+
 const BUFFER_SIZE: usize = 1 << 19;
+//const BLOCK_SIZE: usize = 1 << 16;
 //const BUFFER_SIZE_MIN:usize = 1000000;
+
+
 
 const HEADER_TAIL: [u8; 5] = [b':', b'N', b':', b'0', b':'];
 
@@ -117,8 +119,6 @@ fn write_illumina_header(output_buffer: &mut [u8], mut buffer_end: usize, mgi_re
     buffer_end
 
 }
-
-
 
 pub fn write_general_info_report(sample_information:&Vec<Vec<String>>, 
     sample_statistics:&Vec<Vec<u64>>, 
@@ -344,25 +344,6 @@ fn copy_within_a_slice<T: Clone>(v: &mut [T], from: usize, to: usize, len: usize
     }
 }
 
-/*
-fn write_buffer(read_buffer: &mut[u8], writer: &mut Option<dyn ZWriter>) {
-    match writer{
-            Some(ref mut curr_writer) => {
-                curr_writer.write_all(read_buffer).unwrap()
-                //io::copy( read_buffer, curr_writer).unwrap()
-            },
-            
-            None => panic!("expeted a writer, but None found!")
-    };
-    
-    /*match writer{
-        Some(ref mut curr_writer) => {curr_writer.finish().unwrap();},
-        None => panic!("expeted a writer, but None found!")
-    };*/
-    
-}
-
-*/
 
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
@@ -401,9 +382,10 @@ pub fn demultiplex(
     read2_file_name_suf: &String,
     info_file: &String,
     reporting_level: usize,
-    compression_level: u32
+    compression_level: u32,
+    dynamic_demultiplexing: bool
     
-) {
+) -> Result<(), Box<dyn Error>> {
     
     // Validate and prepare input data and parameters.
 
@@ -424,9 +406,9 @@ pub fn demultiplex(
     //let quick = true;
     
     if input_folder_path.len() > 0{
-        let entries = fs::read_dir(input_folder_path).unwrap()
+        let entries = fs::read_dir(input_folder_path)?
         .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>().unwrap();
+        .collect::<Result<Vec<_>, io::Error>>()?;
         for path in entries{
             if path.file_name().unwrap().to_str().unwrap().ends_with(read1_file_name_suf){
                 let tmp : Vec<&str> = path.file_name().unwrap().to_str().unwrap().split("_").collect();
@@ -546,7 +528,7 @@ pub fn demultiplex(
         println!("The same output directory will be used for reports.");
         report_dir_local = output_directory.clone();
     }
-    if report_dir_local.chars().last().unwrap() != '/'{
+    if report_dir_local.chars().last() != Some('/'){
         report_dir_local.push('/');
     }
 
@@ -578,7 +560,6 @@ pub fn demultiplex(
     }else {
         create_folder(&report_dir_local);
     }
-
   
     
     println!("Output directory: {}", output_directory);
@@ -588,7 +569,8 @@ pub fn demultiplex(
     println!("Lane: {}", lane);
     println!("Comprehensive scan mood: {}", comprehensive_scan);
     println!("Compression level: {}. (0 no compression but fast, 9 best compression but slow.)", compression_level);
-   
+    println!("Dynamic read determination: {}.", dynamic_demultiplexing);
+    
 
     let mut i7_rc = arg_i7_rc;
     let i5_rc = arg_i5_rc;
@@ -674,7 +656,8 @@ pub fn demultiplex(
 
     // writing_threshold: usize, read_merging_threshold
     println!("Output buffer size: {}", writing_buffer_size);
-
+    let uncompressed_buffer_size = writing_buffer_size * 2 + 50000;
+    let relaxed_writing_buffer_size = ( writing_buffer_size as f32 * 0.95 ) as usize;
     // parse sample/index file and get all mismatches
     
     let tmp_res = parse_sample_index(Path::new(sample_sheet_file_path), &template, i7_rc, i5_rc).unwrap();
@@ -711,11 +694,27 @@ pub fn demultiplex(
     let header_length_r2:usize;
     let mut header_length_r1: usize = 0;
 
+    let bgzf_format_in: bool;
 
-    let mut read_barcode_data = BufReader::new(MultiGzDecoder::new(
-        File::open(Path::new(&read_barcode_file_path_final)).expect("Could not open the file")
-    ));
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
+    {
+        let mut reader_barcode_read_tmp:bgzf::Reader<File>  = File::open(Path::new(&read_barcode_file_path_final)).map(bgzf::Reader::new).unwrap();
+        match reader_barcode_read_tmp.read_line(&mut tmp_str){
+            Ok(_)  => {
+                bgzf_format_in = true;
+            },
+            Err(_) => {
+                bgzf_format_in = false;
+            }
+        }
+    }
+    tmp_str.clear();
+    
+    let mut reader_barcode_read_tmp = BufReader::new(MultiGzDecoder::new(
+        File::open(Path::new(&read_barcode_file_path_final)).expect("Could not open the file")));
+    
+
+
+    reader_barcode_read_tmp.read_line(&mut tmp_str).unwrap();
     whole_read_barcode_len += tmp_str.len();
     header_length_r2 = tmp_str.len();
     
@@ -740,24 +739,24 @@ pub fn demultiplex(
     illumina_header_template_p1.push(':');
     let illumina_header_template_bytes = illumina_header_template_p1.as_bytes();
     
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
+    tmp_str.clear();
+    reader_barcode_read_tmp.read_line(&mut tmp_str).unwrap();
     whole_read_barcode_len += tmp_str.len();
     barcode_read_length = tmp_str.chars().count() - 1;
     
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
+    tmp_str.clear();
+    reader_barcode_read_tmp.read_line(&mut tmp_str).unwrap();
     whole_read_barcode_len += tmp_str.len();
     
     let only_plus_r2:bool = tmp_str == "+\n";
     if ! only_plus_r2{
         panic!("Expected read format is not satisified. You can try running demultplex-dynamic command.");
     }
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
+    tmp_str.clear();
+    reader_barcode_read_tmp.read_line(&mut tmp_str).unwrap();
     whole_read_barcode_len += tmp_str.len();
     
-    let mut paired_read_data = if !single_read_input {
+    let mut reader_paired_read = if !single_read_input {
         Some(BufReader::new(MultiGzDecoder::new(
             File::open(Path::new(&paired_read_file_path_final)).expect("Could not open the file")
         )))
@@ -765,20 +764,20 @@ pub fn demultiplex(
         None
     };
     
-    match paired_read_data.as_mut() {
-        Some(paired_read_data_buff) => {
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
+    match reader_paired_read.as_mut() {
+        Some(reader_paired_read_buff) => {
+            tmp_str.clear();
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
             whole_paired_read_len += tmp_str.len();
             header_length_r1 = tmp_str.len();
 
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
+            tmp_str.clear();
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
             paired_read_length = tmp_str.chars().count() - 1;
             whole_paired_read_len += tmp_str.len();
             
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
+            tmp_str.clear();
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
             whole_paired_read_len += tmp_str.len();
             only_plus_r1 = tmp_str == "+\n";
             if ! only_plus_r1{
@@ -786,8 +785,8 @@ pub fn demultiplex(
             }
 
             
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
+            tmp_str.clear();
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
             whole_paired_read_len += tmp_str.len();
             
         },
@@ -818,17 +817,21 @@ pub fn demultiplex(
     
     let mut out_read_barcode_buffer: Vec<Vec<u8>> = Vec::new();
     let mut out_paired_read_buffer: Vec<Vec<u8>> = Vec::new();
-    
     let mut out_read_barcode_buffer_last: Vec<usize> = Vec::new();
     let mut out_paired_read_buffer_last : Vec<usize> = Vec::new();
     
+    let mut out_read_barcode_compression_buffer: Vec<Vec<u8>> = Vec::new();
+    let mut out_paired_read_compression_buffer: Vec<Vec<u8>> = Vec::new();
+    let mut out_read_barcode_compression_buffer_last: Vec<usize> = Vec::new();
+    let mut out_paired_read_compression_buffer_last : Vec<usize> = Vec::new();
+
     let writen_barcode_length :usize = match trim_barcode {
         true => barcode_length,
         false => 0
     };
 
-    let mut output_barcode_file_writers: Vec<Option<ParCompress<Mgzip>>> = Vec::new();
-    let mut output_paired_file_writers: Vec<Option<ParCompress<Mgzip>>> = Vec::new();
+    let mut output_barcode_file_writers: Vec<Option<File>> = Vec::new();
+    let mut output_paired_file_writers: Vec<Option<File>> = Vec::new();
 
     for i in 0..sample_information.len(){
         sample_mismatches.push(vec![0; 2 * allowed_mismatches + 2]);
@@ -884,11 +887,7 @@ pub fn demultiplex(
             .open(output_file_path)
             .expect("couldn't create output");
             
-            let writer: ParCompress<Mgzip> = ParCompressBuilder::new()
-            .compression_level(Compression::new(compression_level))
-            //.num_threads(1)
-            .from_writer(outfile);
-            output_barcode_file_writers.push(Some(writer));
+            output_barcode_file_writers.push(Some(outfile));
             
 
             if !single_read_input {
@@ -898,11 +897,7 @@ pub fn demultiplex(
                 .create(true)
                 .open(output_file_path)
                 .expect("couldn't create output");
-                let writer:  ParCompress<Mgzip> = ParCompressBuilder::new()
-                .compression_level(Compression::new(compression_level))
-                //.num_threads(1)
-                .from_writer(outfile);
-                output_paired_file_writers.push(Some(writer));
+                output_paired_file_writers.push(Some(outfile));
             }else{
                 output_paired_file_writers.push(None);
             }
@@ -916,11 +911,20 @@ pub fn demultiplex(
         sample_statistics.push(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
         out_read_barcode_buffer_last.push(0);
-        out_paired_read_buffer_last.push(0);
         out_read_barcode_buffer.push(vec![0; writing_buffer_size]);
+        out_read_barcode_compression_buffer_last.push(0);
+        out_read_barcode_compression_buffer.push(vec![0; uncompressed_buffer_size]);
+        
+
+        out_paired_read_buffer_last.push(0);
+        out_paired_read_compression_buffer_last.push(0);
+        
         if ! single_read_input{
             out_paired_read_buffer.push( vec![0; writing_buffer_size]);
-        }      
+            out_paired_read_compression_buffer.push( vec![0; uncompressed_buffer_size]);
+            
+        }
+
     }
 
     //let mut curr_template;
@@ -944,10 +948,29 @@ pub fn demultiplex(
     let dur;
     
     
-    let (mut reader_barcode_read, _) = 
-    niffler::get_reader(Box::new(std::fs::File::open(read_barcode_file_path_final).unwrap())).unwrap();
+
+    let mut reader_barcode_read = if bgzf_format_in{
+        Box::new(File::open(Path::new(&read_barcode_file_path_final)).map(bgzf::Reader::new).unwrap())
+    }else{
+        let (tmp_reader, _) = niffler::get_reader(Box::new(std::fs::File::open(read_barcode_file_path_final).unwrap())).unwrap();
+        tmp_reader
+    };
     
-     
+    /* 
+    let mut reader_paired_read: Option<Box<dyn Read>> = if !single_read_input {
+        if bgzf_format_in{
+            Some(File::open(Path::new(&paired_read_file_path_final)).map(bgzf::Reader::new).unwrap())
+        }else{
+            Some(niffler::get_reader(Box::new(std::fs::File::open(paired_read_file_path_final).unwrap())).unwrap())
+        }
+    } else {
+        None
+    };
+    
+    */
+    
+    
+    //let (mut reader_barcode_read, _)= niffler::get_reader(Box::new(std::fs::File::open(read_barcode_file_path_final).unwrap())).unwrap();
     
     let mut reader_paired_read = if !single_read_input {
         let (s1, _) = niffler::get_reader(Box::new(std::fs::File::open(paired_read_file_path_final).unwrap())).unwrap();
@@ -992,22 +1015,43 @@ pub fn demultiplex(
     let mut curr_buffer_end;
     let mut template_itr:usize;
     
-    
+    let mut compressor = Compressor::new(CompressionLvl::new(compression_level as i32).unwrap());
+    let mut actual_sz:usize;
+    let mut curr_writing_sample:usize;
+    let total_samples:usize = sample_information.len();
     loop {
         //println!("Read: {}", read_cntr);
-        seq_start = header_start + header_length_r2;
-        plus_start = seq_start + barcode_read_length + 1;
-        qual_start = plus_start + 2;
-        read_end = barcode_read_length + qual_start;  // \n position. 
-        
-        if buffer_2[seq_start - 1] != b'\n' || buffer_2[plus_start - 1] != b'\n' ||
-        buffer_2[qual_start - 1] != b'\n' || buffer_2[read_end] != b'\n'{
-            panic!("Expected read format is not satisified. You can try running demultplex-dynamic command.");
+        if dynamic_demultiplexing{
+            seq_start = match memchr(b'\n', &buffer_2[header_start..read_bytes_2]) {
+                None => { panic!("Something wrong with the input data!");},
+                Some(loc) => {header_start + loc + 1}
+            };
+            plus_start = match memchr(b'\n', &buffer_2[seq_start..read_bytes_2]) {
+                None => { panic!("Something wrong with the input data!");},
+                Some(loc) => {seq_start + loc + 1}
+            };
+            qual_start = match memchr(b'\n', &buffer_2[plus_start..read_bytes_2]) {
+                None => { panic!("Something wrong with the input data!");},
+                Some(loc) => {loc + plus_start + 1}
+            };
+            read_end = match memchr(b'\n', &buffer_2[qual_start..read_bytes_2]) {
+                None => { panic!("Something wrong with the input data!");},
+                Some(loc) => {qual_start + loc}
+            };
+        }else{
+            seq_start = header_start + header_length_r2;
+            plus_start = seq_start + barcode_read_length + 1;
+            qual_start = plus_start + 2;
+            read_end = barcode_read_length + qual_start;  // \n position.
+            if buffer_2[seq_start - 1] != b'\n' || buffer_2[plus_start - 1] != b'\n' ||
+                buffer_2[qual_start - 1] != b'\n' || buffer_2[read_end] != b'\n'{
+                panic!("Expected read format is not satisified. You can try running demultplex-dynamic command.");
+            }     
         }
         
         curr_mismatch = usize::MAX;
         latest_mismatch = usize::MAX;
-        sample_id = sample_information.len();
+        sample_id = total_samples;
         template_itr = 0;
 
         for template_details in &all_template_data {
@@ -1049,7 +1093,7 @@ pub fn demultiplex(
                                             .get(i5_matches.0[i5_match_itr])
                                             {
                                                 Some(i5_info) => {
-                                                    if sample_id >= sample_information.len() || latest_mismatch > curr_mismatch {
+                                                    if sample_id >= total_samples || latest_mismatch > curr_mismatch {
                                                         sample_id = *i5_info;
                                                         latest_mismatch = curr_mismatch;
                                                         curr_barcode = unsafe {
@@ -1119,7 +1163,10 @@ pub fn demultiplex(
                             continue;
                         }else if latest_mismatch > i7_matches.1{
                             curr_mismatch = i7_matches.1;
-                            sample_id = template_details.4.get(i7_matches.0[0]).unwrap().0;
+                            sample_id = match template_details.4.get(i7_matches.0[0]){
+                                Some(tmp) => tmp.0,
+                                None => {panic!("There should be a value here");}
+                            };
                             //barcode_length = indexes_info[9];
                             if illumina_format {
                                 curr_barcode = unsafe {
@@ -1163,7 +1210,7 @@ pub fn demultiplex(
                 }
             };
             
-            if (sample_id != undetermined_label_id && sample_id < sample_information.len()) && !comprehensive_scan {
+            if (sample_id != undetermined_label_id && sample_id < total_samples) && !comprehensive_scan {
                 break;
             }
             
@@ -1171,7 +1218,7 @@ pub fn demultiplex(
         }
     
 
-        if sample_id >= sample_information.len() {
+        if sample_id >= total_samples {
             sample_id = undetermined_label_id;
             
         }
@@ -1235,14 +1282,33 @@ pub fn demultiplex(
         
 
         if !single_read_input {
-            seq_start_pr = header_start_pr + header_length_r1;
-            plus_start_pr = seq_start_pr + paired_read_length + 1;
-            qual_start_pr = plus_start_pr + 2;
-            read_end_pr = paired_read_length + qual_start_pr;
-            if buffer_1[seq_start_pr - 1] != b'\n' || buffer_1[plus_start_pr - 1] != b'\n' ||
-                buffer_1[qual_start_pr - 1] != b'\n' || buffer_1[read_end_pr] != b'\n'{
-                panic!("Expected format is not satisified. You can try running demultplex-dynamic command.");
-            }           
+            if dynamic_demultiplexing{
+                seq_start_pr = match memchr(b'\n', &buffer_1[header_start_pr..read_bytes_1]) {
+                    None => { panic!("Something wrong with the input data!");},
+                    Some(loc) => {header_start_pr + loc + 1}
+                };
+                plus_start_pr = match memchr(b'\n', &buffer_1[seq_start_pr..read_bytes_1]) {
+                    None => { panic!("Something wrong with the input data!");},
+                    Some(loc) => {seq_start_pr + loc + 1}
+                };
+                qual_start_pr = match memchr(b'\n', &buffer_1[plus_start_pr..read_bytes_1]) {
+                    None => { panic!("Something wrong with the input data!");},
+                    Some(loc) => {loc + plus_start_pr + 1}
+                };
+                read_end_pr = match memchr(b'\n', &buffer_1[qual_start_pr..read_bytes_1]) {
+                    None => { panic!("Something wrong with the input data!");},
+                    Some(loc) => {loc + qual_start_pr}
+                };
+            }else{
+                seq_start_pr = header_start_pr + header_length_r1;
+                plus_start_pr = seq_start_pr + paired_read_length + 1;
+                qual_start_pr = plus_start_pr + 2;
+                read_end_pr = paired_read_length + qual_start_pr;
+                if buffer_1[seq_start_pr - 1] != b'\n' || buffer_1[plus_start_pr - 1] != b'\n' ||
+                    buffer_1[qual_start_pr - 1] != b'\n' || buffer_1[read_end_pr] != b'\n'{
+                    panic!("Expected format is not satisified. You can try running demultplex-dynamic command.");
+                }     
+            }      
         }
         
         
@@ -1305,52 +1371,56 @@ pub fn demultiplex(
        
         
                 
-        
-        
+                
         sample_mismatches[sample_id][0] += 1;
         sample_mismatches[sample_id][curr_mismatch + 1] += 1;
-
+        curr_writing_sample = writing_samples[sample_id];
         // writing preperation
-        curr_buffer_end = out_read_barcode_buffer_last[writing_samples[sample_id]];
+        curr_buffer_end = out_read_barcode_buffer_last[curr_writing_sample];
         // this works for mgi format and unde and ambig and ilumina with a bit of extr
         if curr_buffer_end + read_end - header_start + illumina_header_template_bytes.len() >= writing_buffer_size{
-            match output_barcode_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {
-                        curr_writer.write_all(&out_read_barcode_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
-                       
-                    },
-                    
-                    None => panic!("expeted a writer, but None found!")
-            };
             
-            
-            curr_buffer_end = 0;            
+            actual_sz = compressor.gzip_compress(&out_read_barcode_buffer[curr_writing_sample][..curr_buffer_end],                   &mut out_read_barcode_compression_buffer[curr_writing_sample][out_read_barcode_compression_buffer_last[curr_writing_sample]..]).unwrap();
+            out_read_barcode_compression_buffer_last[curr_writing_sample] += actual_sz;
+            curr_buffer_end = 0;
+
+                if out_read_barcode_compression_buffer_last[curr_writing_sample] >= relaxed_writing_buffer_size {
+                    match output_barcode_file_writers[curr_writing_sample]{
+                        Some(ref mut curr_writer) => {
+                            curr_writer.write_all(&out_read_barcode_compression_buffer[curr_writing_sample][..out_read_barcode_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            out_read_barcode_compression_buffer_last[curr_writing_sample] = 0;
+                        },
+                        
+                        None => panic!("expeted a writer, but None found!")
+                    };
+                } 
+                         
         }
 
 
 
 
         if sample_id >= undetermined_label_id{
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
+            out_read_barcode_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
                     copy_from_slice(&buffer_2[header_start..read_end + 1]);
         
             
-            out_read_barcode_buffer_last[writing_samples[sample_id]] = curr_buffer_end + read_end - header_start + 1;
+            out_read_barcode_buffer_last[curr_writing_sample] = curr_buffer_end + read_end - header_start + 1;
             
         }else if read2_has_sequence
         {
             if illumina_format{
                 // Illumina format write the heder and skip the header for mgi.
                 barcode_read_illumina_header_start = curr_buffer_end;
-                out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + illumina_header_template_bytes.len()].
+                out_read_barcode_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + illumina_header_template_bytes.len()].
                 copy_from_slice(&illumina_header_template_bytes[..]);
                 curr_buffer_end += illumina_header_template_bytes.len();
     
-                curr_buffer_end = write_illumina_header(&mut out_read_barcode_buffer[writing_samples[sample_id]], 
+                curr_buffer_end = write_illumina_header(&mut out_read_barcode_buffer[curr_writing_sample], 
                     curr_buffer_end, &buffer_2[header_start..seq_start], 
                                         &curr_umi.as_bytes(), l_position);
                
-                out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
+                out_read_barcode_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
                     .copy_from_slice(&curr_barcode.as_bytes());
                 curr_buffer_end += curr_barcode.len();
                 barcode_read_illumina_header_end = curr_buffer_end;
@@ -1358,51 +1428,61 @@ pub fn demultiplex(
             }        
             
                         
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
+            out_read_barcode_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
                 copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
     
             curr_buffer_end += plus_start - header_start - writen_barcode_length - 1;
                     
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
+            out_read_barcode_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
                         copy_from_slice(&buffer_2[plus_start - 1..read_end - writen_barcode_length]);
                 
             curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
-            out_read_barcode_buffer[writing_samples[sample_id]][curr_buffer_end - 1] = b'\n';
-            out_read_barcode_buffer_last[writing_samples[sample_id]] = curr_buffer_end;
+            out_read_barcode_buffer[curr_writing_sample][curr_buffer_end - 1] = b'\n';
+            out_read_barcode_buffer_last[curr_writing_sample] = curr_buffer_end;
     
         }
         
         if ! single_read_input{
-            
-            curr_buffer_end = out_paired_read_buffer_last[writing_samples[sample_id]];
-            if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_template_bytes.len() + curr_barcode.len() + curr_umi.len() + 15 >= writing_buffer_size{
-                match output_paired_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {
-                        curr_writer.write_all(&out_paired_read_buffer[writing_samples[sample_id]][..curr_buffer_end]).unwrap()
+            curr_buffer_end = out_paired_read_buffer_last[curr_writing_sample];
+            /* 
+            println!("{} - {} - {} - {} - {} --- {} : {}", writing_buffer_size, relaxed_writing_buffer_size, uncompressed_buffer_size, 
+                                    curr_buffer_end, 
+                                    out_paired_read_compression_buffer_last[curr_writing_sample],
+                                compressor.gzip_compress_bound(out_paired_read_compression_buffer_last[curr_writing_sample]),
+                                out_paired_read_compression_buffer[curr_writing_sample][out_paired_read_compression_buffer_last[curr_writing_sample]..].len());
+            */
+            if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_template_bytes.len() >= writing_buffer_size{                
+                actual_sz = compressor.gzip_compress(&out_paired_read_buffer[curr_writing_sample][..curr_buffer_end], &mut out_paired_read_compression_buffer[curr_writing_sample][out_paired_read_compression_buffer_last[curr_writing_sample]..]).unwrap();
+                out_paired_read_compression_buffer_last[curr_writing_sample] += actual_sz;
+                curr_buffer_end = 0;
+
+                if out_paired_read_compression_buffer_last[curr_writing_sample] >= relaxed_writing_buffer_size {
+                    match output_paired_file_writers[curr_writing_sample]{
+                        Some(ref mut curr_writer) => {
+                            curr_writer.write_all(&out_paired_read_compression_buffer[curr_writing_sample][..out_paired_read_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            out_paired_read_compression_buffer_last[curr_writing_sample] = 0;
+                        },
                         
-                    },
-                    None => panic!("expeted a writer, but None found!")
-                };
-            
-                curr_buffer_end = 0; 
+                        None => panic!("expeted a writer, but None found!")
+                    };
+                }             
             }
 
             if illumina_format && sample_id < undetermined_label_id{
-                out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
-                copy_from_slice(&out_read_barcode_buffer[writing_samples[sample_id]][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
+                out_paired_read_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
+                copy_from_slice(&out_read_barcode_buffer[curr_writing_sample][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
                 curr_buffer_end += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
-                out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
+                out_paired_read_buffer[curr_writing_sample][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
                 header_start_pr = seq_start_pr - 1;
             }
 
             
-            out_paired_read_buffer[writing_samples[sample_id]][curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
+            out_paired_read_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
                 copy_from_slice(&buffer_1[header_start_pr..read_end_pr + 1]);
                 
-            out_paired_read_buffer_last[writing_samples[sample_id]] = curr_buffer_end + read_end_pr - header_start_pr + 1;
+            out_paired_read_buffer_last[curr_writing_sample] = curr_buffer_end + read_end_pr - header_start_pr + 1;
             
-            if read_end_pr + whole_paired_read_len >= read_bytes_1 {
-                
+            if read_end_pr + whole_paired_read_len >= read_bytes_1 {      
                 if read_end_pr < read_bytes_1 - 1 && header_start_pr > 0 {
                     copy_within_a_slice(&mut buffer_1, read_end_pr + 1, 0, read_bytes_1 - read_end_pr - 1);
                     read_bytes_1 -= read_end_pr + 1;
@@ -1459,6 +1539,7 @@ pub fn demultiplex(
     let max_mismatches = allowed_mismatches + 1;
     
     
+    
     for sample_id in 0..out_read_barcode_buffer.len() {
 
         sample_statistics[sample_id][3] = paired_read_length_64 * sample_mismatches[sample_id][0];
@@ -1467,45 +1548,52 @@ pub fn demultiplex(
         sample_statistics[sample_id][5] = barcode_length_u64 * sample_mismatches[sample_id][0];
         sample_statistics[sample_id][7] -= sample_statistics[sample_id][shift + 3] * 33;
         sample_statistics[sample_id][8] -= sample_statistics[sample_id][5] * 33;
-        
-        if writing_samples[sample_id] == sample_id 
+        curr_writing_sample = writing_samples[sample_id];
+        if curr_writing_sample == sample_id 
         {
             if !single_read_input {
-                if out_paired_read_buffer_last[writing_samples[sample_id]] > 0 {
-                    match output_paired_file_writers[writing_samples[sample_id]]{
+                if out_paired_read_buffer_last[curr_writing_sample] > 0{
+                    actual_sz = compressor.gzip_compress(&out_paired_read_buffer[curr_writing_sample][..out_paired_read_buffer_last[curr_writing_sample]], &mut out_paired_read_compression_buffer[curr_writing_sample][out_paired_read_compression_buffer_last[curr_writing_sample]..]).unwrap();
+                    out_paired_read_compression_buffer_last[curr_writing_sample] += actual_sz;
+                
+    
+                
+                    match output_paired_file_writers[curr_writing_sample]{
+                            Some(ref mut curr_writer) => {
+                                curr_writer.write_all(&out_paired_read_compression_buffer[curr_writing_sample][..out_paired_read_compression_buffer_last[curr_writing_sample]]).unwrap();
+                                out_paired_read_compression_buffer_last[curr_writing_sample] = 0;
+                                curr_writer.flush().unwrap();
+                            },
+                            
+                            None => panic!("expeted a writer, but None found!")
+                    };
+                }
+        }             
+            
+    
+            if out_read_barcode_buffer_last[curr_writing_sample] > 0{
+                actual_sz = compressor.gzip_compress(                    &out_read_barcode_buffer[curr_writing_sample][..out_read_barcode_buffer_last[curr_writing_sample]],             &mut out_read_barcode_compression_buffer[curr_writing_sample][out_read_barcode_compression_buffer_last[curr_writing_sample]..]).unwrap();
+                out_read_barcode_compression_buffer_last[curr_writing_sample] += actual_sz;
+                
+                    match output_barcode_file_writers[curr_writing_sample]{
                         Some(ref mut curr_writer) => {
-                            curr_writer.write_all(&out_paired_read_buffer[writing_samples[sample_id]][..out_paired_read_buffer_last[writing_samples[sample_id]]]).unwrap()
+                            curr_writer.write_all(&out_read_barcode_compression_buffer[curr_writing_sample][..out_read_barcode_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            out_read_barcode_compression_buffer_last[curr_writing_sample] = 0;
+                            curr_writer.flush().unwrap();
                         },
                         
                         None => panic!("expeted a writer, but None found!")
                     };
-                    
-                    out_paired_read_buffer_last[writing_samples[sample_id]] = 0;
-                }
-                
-                match output_paired_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {curr_writer.finish().unwrap();},
-                    None => panic!("expeted a writer, but None found!")
-                };
+                                
             }
-    
-            if out_read_barcode_buffer_last[writing_samples[sample_id]] > 0{
-                match output_barcode_file_writers[writing_samples[sample_id]]{
-                    Some(ref mut curr_writer) => {
-                        curr_writer.write_all(&out_read_barcode_buffer[writing_samples[sample_id]][..out_read_barcode_buffer_last[writing_samples[sample_id]]]).unwrap()
-                    },
-                    None => panic!("expeted a writer, but None found!")
-                };
-                out_read_barcode_buffer_last[writing_samples[sample_id]] = 0;                 
-            }
-            match output_barcode_file_writers[writing_samples[sample_id]]{
-                Some(ref mut curr_writer) => {curr_writer.finish().unwrap();},
-                None => panic!("expeted a writer, but None found!")
-            };
+            
             
         } 
     }
     
+
+    
+
     dur = start.elapsed();
     
     println!("{} reads were processed in {} secs.", read_cntr, dur.as_secs());
@@ -1576,7 +1664,7 @@ pub fn demultiplex(
         
         report_path.push_str(&report_path_main);
         
-        //println!("{}  -> {:?}", project_id, samples);
+        //println!("{}  -> {:.unwrap()}", project_id, samples);
         //Start writing info report
         write_index_info_report(&sample_information, &sample_mismatches, samples, max_mismatches, format!("{}{}", &report_path, &"info"));
         //Finish writing info report
@@ -1633,8 +1721,7 @@ pub fn demultiplex(
             rep_itr = 0;
             for barcode in &ambiguous_barcodes_out {
                 outfile
-                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes())
-                    .unwrap();
+                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes()).unwrap();
                 rep_itr += 1;
                 if rep_itr == report_limit {
                     break;
@@ -1646,8 +1733,7 @@ pub fn demultiplex(
             outfile = BufWriter::new(File::create(output_file_path).expect("couldn't create output"));
             for barcode in &ambiguous_barcodes_out {
                 outfile
-                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes())
-                    .unwrap();
+                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes()).unwrap();
             }
         }
 
@@ -1665,8 +1751,7 @@ pub fn demultiplex(
             undetermined_barcodes_out.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)).reverse());
             for barcode in &undetermined_barcodes_out {
                 outfile
-                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes())
-                    .unwrap();
+                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes()).unwrap();
                 rep_itr += 1;
                 if rep_itr == report_limit {
                     break;
@@ -1679,8 +1764,7 @@ pub fn demultiplex(
             undetermined_barcodes_out.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)).reverse());
             for barcode in &undetermined_barcodes_out {
                 outfile
-                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes())
-                    .unwrap();
+                    .write_all(&format!("{}\t{}\n", barcode.0, barcode.1).as_bytes()).unwrap();
             }
         }
     }
@@ -1688,8 +1772,9 @@ pub fn demultiplex(
     let log_dur = start_logs.elapsed();
     
     println!("Writing all logs and reports took {} secs.", log_dur.as_secs());
-
+    Ok(())
 }
+
 
 
 pub fn detect_template(
@@ -1756,16 +1841,16 @@ pub fn detect_template(
     let barcode_read_length: usize;
     let paired_read_length: usize;
     
-    let mut read_barcode_data: BufReader<MultiGzDecoder<File>> = BufReader::new(MultiGzDecoder::new(
+    let mut reader_barcode_read = BufReader::new(MultiGzDecoder::new(
         File::open(Path::new(&read_barcode_file_path_final)).expect("Could not open the file")
     ));
     
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
-    tmp_str = String::new();
-    read_barcode_data.read_line(&mut tmp_str).unwrap();
+    reader_barcode_read.read_line(&mut tmp_str).unwrap();
+    tmp_str.clear();
+    reader_barcode_read.read_line(&mut tmp_str).unwrap();
     barcode_read_length = tmp_str.chars().count() - 1;
-
-    let mut paired_read_data = if !single_read_input {
+    tmp_str.clear();
+    let mut reader_paired_read = if !single_read_input {
         Some(BufReader::new(MultiGzDecoder::new(
             File::open(Path::new(&paired_read_file_path_final)).expect("Could not open the file")
         )))
@@ -1773,11 +1858,11 @@ pub fn detect_template(
         None
     };
     
-    match paired_read_data.as_mut() {
-        Some(paired_read_data_buff) => {
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
-            tmp_str = String::new();
-            paired_read_data_buff.read_line(&mut tmp_str).unwrap();
+    match reader_paired_read.as_mut() {
+        Some(reader_paired_read_buff) => {
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
+            tmp_str.clear();
+            reader_paired_read_buff.read_line(&mut tmp_str).unwrap();
             paired_read_length = tmp_str.chars().count() - 1;
         },
         None => {
@@ -1813,7 +1898,7 @@ pub fn detect_template(
 
 
 
-    read_barcode_data = BufReader::new(MultiGzDecoder::new(
+    reader_barcode_read = BufReader::new(MultiGzDecoder::new(
         File::open(Path::new(&read_barcode_file_path_final)).expect("Could not open the file")
     ));
 
@@ -1832,12 +1917,12 @@ pub fn detect_template(
             break;
         }
         read_barcode_seq = String::new();
-        read_bytes = read_barcode_data.read_line(&mut read_barcode_seq).unwrap();
+        read_bytes = reader_barcode_read.read_line(&mut read_barcode_seq).unwrap();
         if read_bytes == 0 {
             break;
         }
         read_barcode_seq = String::new();
-        read_barcode_data.read_line(&mut read_barcode_seq).unwrap();
+        reader_barcode_read.read_line(&mut read_barcode_seq).unwrap();
 
         //println!("Read seq: {}", read_barcode_seq);
         read_barcode_seq = read_barcode_seq[(read_barcode_seq.len() - barcode_length - 1)..(read_barcode_seq.len() -1)].to_string();
@@ -1856,8 +1941,8 @@ pub fn detect_template(
        }
         
             
-        read_barcode_data.read_line(&mut read_barcode_seq).unwrap();
-        read_barcode_data.read_line(&mut read_barcode_seq).unwrap();
+        reader_barcode_read.read_line(&mut read_barcode_seq).unwrap();
+        reader_barcode_read.read_line(&mut read_barcode_seq).unwrap();
         read_cntr += 1;
         
     }

@@ -5,6 +5,7 @@ use std::fs;
 use std::io::Read;
 use std::process::Command;
 use std::path::Path;
+use flate2::read::MultiGzDecoder;
 
 fn get_hash(file_path: &String) -> Vec<u8> {
     println!("Getting hash for the file {}.", file_path);
@@ -14,7 +15,7 @@ fn get_hash(file_path: &String) -> Vec<u8> {
     buffer
 }
 
-fn get_gzip_hash(file_path: &String) -> String {
+fn get_gzip_hash_old(file_path: &String) -> String {
     println!("getting hash for {}", file_path);
     let command = "gzip";
     let output = Command::new(command)
@@ -36,6 +37,16 @@ fn get_gzip_hash(file_path: &String) -> String {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+fn get_gzip_hash(file_path: &String) -> String {
+    println!("getting string for {}", file_path);
+    let mut tmp_str: String = String::new();
+    let mut reader = MultiGzDecoder::new(
+        File::open(Path::new(&file_path)).expect("Could not open the file")
+    );
+    reader.read_to_string(&mut tmp_str).unwrap();
+    tmp_str
 }
 
 #[test]

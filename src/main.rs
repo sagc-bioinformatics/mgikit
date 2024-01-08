@@ -240,6 +240,12 @@ fn main() {
                         .default_value("2")
                         .value_parser(clap::value_parser!(u32))
                         .help("The level of compression (between 0 and 9). 0 is fast but no compression, 9 is slow but high compression.")
+                ).arg(
+                    Arg::new("arg_dynamic")
+                        .long("flexible")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("Determine reads based on the new lines rather than the expect length of the read parts.")
                 )
         )
         .subcommand(
@@ -366,8 +372,9 @@ fn main() {
                 let arg_info_file: &String = demultiplex_command.get_one::<String>("arg_info_file").unwrap();
                 let arg_report_level: &usize = demultiplex_command.get_one::<usize>("arg_report_level").unwrap();
                 let arg_compression_level: &u32 = demultiplex_command.get_one::<u32>("arg_compression_level").unwrap();
+                let arg_dynamic:  &bool = demultiplex_command.get_one::<bool>("arg_dynamic").unwrap();
                 
-                demultiplex(
+                match demultiplex(
                     arg_input_folder_path,
                     &mut arg_read1_file_path,
                     &mut arg_read2_file_path,
@@ -393,8 +400,12 @@ fn main() {
                     arg_read2_file_name_suf,
                     arg_info_file,
                     *arg_report_level,
-                    *arg_compression_level
-                );
+                    *arg_compression_level,
+                    *arg_dynamic
+                ) {
+                    Ok(_) => {},
+                    Err(err) => eprintln!("Error: {}", err),
+                };
             },
             Some(("report", report_command)) => {
                 let arg_ouput_dir: &String = report_command.get_one::<String>("arg_ouput_dir").unwrap();
