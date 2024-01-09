@@ -3,36 +3,45 @@
 ![SAGC-Bioinformatics](docs/assets/SAGC-logo-hover.png)
 
 ---
-# MGIKIT 
-mgikit is a collection of tools used to demultiplex fastq files and generate reports including.
 
-The toolkit includes the following functionalities:
+## MGIKIT 
+mgikit is a collection of tools used to demultiplex fastq files and generate demultiplexing and quality reports.
 
-1. **demultiplex**: This command is used to demultiplex fastq files and assign the sequencing reads to their
-associated samples.
-2. **template**: This command is used to detect the location and form of the indexes within the read barcode if unknown.
-3. **report**: This command is used to merge Lanes' reports (demultiplexing and quality reports) and generate the same reports for the whole run and for grouped samples (multiple projects in the same run).
+The toolkit includes the following commands:
 
-Details about these functionalities are described at [mgikit usage documentation](docs/usage_documentation.md). 
+### demultiplex
+This command is used to demultiplex fastq files and assign the sequencing reads to their
+associated samples. The tool requires the following mandatory input files to perform the
+demultiplexing:
+1. Fastq files (single/paired-end).
+2. Sample sheet which contains sample indexes and their templates (will be explained in detail).
 
-# Installation
+Simply, the tool reads the barcodes at the end of R2 (reveres) reads for paired-end reads input or the end of
+R1 (forward) reads for single read input. Based on the barcode, it assigns the read to the relevant
+sample allowing for mismatches less than a specific threshold. The tool outputs fastq files for each sample
+as well as some summary reports that can be visualised through the MultiQC tool and mgikit plugin.
 
-The binary file can be used directly, or the tool can be built from the source code as follows:
+<hr/>
 
-```bash
-clone 
-cd source_code_path
-cargo build --release
-```
+### template
 
-# Note
+This command is used to detect the location and form of the indexes within the read barcode. It simply goes through a small number of the reads and investigates the number of matches with the indexes in the sample sheet within each possible location in the read barcode and considering the indexes as is and their reverse complementary. 
 
-This is my first project using the Rust programming language. Very likely that the code can be improved and optimised. I will be improving it with time.   
+It reports matches for all possible combinations and uses the read template that had the maximum number of matches. This process happens for each sample individually and therefore, the best matching template for each sample will be reported. 
 
-# Commerical Use
+Using this comprehensive scan, the tool can detect the templates for mixed libraries. 
+
+
+### report
+
+This command is to merge demultiplexing and quality reports from multiple lanes into one comprehensive report for MultQC reports visualisation.
+
+<hr/>
+
+## User Guide
+
+Please checkout the [documeantion](https://sagc-bioinformatics.github.io/mgikit/)
+
+## Commerical Use
 
 Please contact us if you want to use the software for commercial purposes.
-
-# Contact information
-
-For any help or inquiries, please contact: ziad.albkhetan@gmail.com or sagc@sahmri.com

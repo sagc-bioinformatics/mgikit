@@ -5,15 +5,18 @@ use std::fs;
 use std::io::Read;
 use std::process::Command;
 use std::path::Path;
+use flate2::read::MultiGzDecoder;
+use walkdir::WalkDir;
 
 fn get_hash(file_path: &String) -> Vec<u8> {
+    println!("Getting hash for the file {}.", file_path);
     let mut f = File::open(file_path).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
     buffer
 }
-
-fn get_gzip_hash(file_path: &String) -> String {
+/*
+fn get_gzip_hash_old(file_path: &String) -> String {
     println!("getting hash for {}", file_path);
     let command = "gzip";
     let output = Command::new(command)
@@ -35,6 +38,34 @@ fn get_gzip_hash(file_path: &String) -> String {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+*/
+fn get_gzip_hash(file_path: &String) -> String {
+    // changed to compare strings instead of hashs
+    println!("getting string for {}", file_path);
+    let mut tmp_str: String = String::new();
+    let mut reader = MultiGzDecoder::new(
+        File::open(Path::new(&file_path)).expect("Could not open the file")
+    );
+    reader.read_to_string(&mut tmp_str).unwrap();
+    tmp_str
+}
+
+fn count_files_recursive(path: &String) -> u64 {
+    let mut count = 0;
+
+    for entry in WalkDir::new(path).follow_links(true) {
+        match entry {
+            Ok(entry) => {
+                if entry.file_type().is_file() {
+                    count += 1;
+                }
+            }
+            Err(err) => eprintln!("Error while processing entry: {}", err),
+        }
+    }
+
+    count
 }
 
 #[test]
@@ -129,7 +160,6 @@ fn testing_template() {
 #[test]
 fn testing_demultiplex() {
     for ds_itr_tmp in 1..10{
-        
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
             6 => 1,
@@ -196,6 +226,27 @@ fn testing_demultiplex() {
                                                 format!("{}", allowed_mismatches), 
                                                 "--force".to_string()];
             
+            println!("{:?}", vec!["demultiplex".to_string(),
+            "-f".to_string(),
+            read1_file_path.to_string(), 
+            "-r".to_string(), 
+            read2_file_path.to_string(), 
+            "-i".to_string(), 
+            input_folder_path.to_string(), 
+            "-s".to_string(), 
+            sample_sheet_file_path.to_string(), 
+            "--lane".to_string(), 
+            lane.to_string(), 
+            "--run".to_string(), 
+            run.to_string(), 
+            "--instrument".to_string(), 
+            instrument.to_string(), 
+            "-o".to_string(), 
+            ouput_dir.to_string(), 
+            "-m".to_string(), 
+            format!("{}", allowed_mismatches), 
+            "--force".to_string()]);
+
             if comprehensive_scan{
                 my_args.push("--comprehensive-scan".to_string());
             }
@@ -214,8 +265,6 @@ fn testing_demultiplex() {
                 .output() // Capture the output of the command.
                 .expect("Failed to execute command");
             
-
-
             if output.status.success() {
                 let output_str = String::from_utf8_lossy(&output.stdout);
                 let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
@@ -224,20 +273,21 @@ fn testing_demultiplex() {
                 
             } else {
                 panic!(
-                    "Command failed with exit code: {}\nError message: {}",
+                    "Command failed with exit code: {}\nError message: {}\nOutput:{}",
                     output.status,
-                    String::from_utf8_lossy(&output.stderr)
+                    String::from_utf8_lossy(&output.stderr),
+                    String::from_utf8_lossy(&output.stdout)
                 );
             }
             
-            let paths = fs::read_dir(original_path).unwrap();
+            let paths = fs::read_dir(&original_path).unwrap();
             for path in paths {
                 println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
-                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap().clone()));
+                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
                 
                 if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
                     
-                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap().clone()));
+                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
                     
                     let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
                     assert_eq!(crc_new, crc_original);
@@ -252,7 +302,11 @@ fn testing_demultiplex() {
                 
         
             }
-            
+
+            println!("Checking count of files");
+            assert_eq!(count_files_recursive(&ouput_dir),
+                       count_files_recursive(&original_path));
+
             if [7, 8, 9].contains(&ds_itr_tmp){
                 break;
             }

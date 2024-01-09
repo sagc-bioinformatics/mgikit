@@ -1,55 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use itertools::Itertools;
 
-/* 
-pub fn get_mismatches(index: &String, allowed_mismatches: usize) -> HashSet<String> {
-    let mut final_output = HashSet::new();
-    let nec_ls = ['A', 'C', 'T', 'G', 'N'];
-    let combination_ls = (0..index.len()).combinations(allowed_mismatches);
-
-    for combination in combination_ls {
-        let mut all_combinations: Vec<String> = nec_ls
-            .iter()
-            .filter(|&i| *i != index.chars().nth(combination[0]).unwrap())
-            .map(|x| x.to_string())
-            .collect();
-        for nec_ind in 1..combination.len() {
-            let ls_nec: Vec<char> = nec_ls
-                .iter()
-                .filter(|&i| *i != index.chars().nth(combination[nec_ind]).unwrap())
-                .cloned()
-                .collect();
-            let mut tmp: Vec<String> = Vec::new();
-            for x in all_combinations {
-                for y in &ls_nec {
-                    let mut z = x.clone();
-                    z.push(*y);
-                    tmp.push(z);
-                }
-            }
-            all_combinations = tmp;
-        }
-
-        for combination_inner in all_combinations {
-            let mut index_edited = index.clone();
-
-            for nec_ind in 0..combination.len() {
-                index_edited.replace_range(
-                    combination[nec_ind]..(combination[nec_ind] + 1),
-                    &combination_inner[nec_ind..(nec_ind + 1)],
-                );
-            }
-            final_output.insert(index_edited.to_owned());
-        }
-    }
-
-    final_output
-}
-*/
 pub fn get_all_mismatches<'a>(
     all_indexes: &'a HashSet<String>,
     allowed_mismatches: usize,
-) -> HashMap<String, (Vec<&'a String>, usize)> {
+) -> HashMap<Vec<u8>, (Vec<&'a String>, usize)> {
     if all_indexes.len() == 0{
         return HashMap::new();
     }
@@ -157,7 +112,7 @@ pub fn get_all_mismatches<'a>(
             if value[i].len() > 0 {
                 //let mut tmp_z = value[i].clone();
                 //tmp_z.sort_by(|a, b| a.cmp(b));
-                sample_index_map.insert(key, (
+                sample_index_map.insert(key.as_bytes().to_vec(), (
                     value[i].to_owned(), 
                     i)
                 );
