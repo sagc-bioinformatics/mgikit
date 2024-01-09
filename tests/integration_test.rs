@@ -6,6 +6,7 @@ use std::io::Read;
 use std::process::Command;
 use std::path::Path;
 use flate2::read::MultiGzDecoder;
+use walkdir::WalkDir;
 
 fn get_hash(file_path: &String) -> Vec<u8> {
     println!("Getting hash for the file {}.", file_path);
@@ -14,7 +15,7 @@ fn get_hash(file_path: &String) -> Vec<u8> {
     f.read_to_end(&mut buffer).unwrap();
     buffer
 }
-
+/*
 fn get_gzip_hash_old(file_path: &String) -> String {
     println!("getting hash for {}", file_path);
     let command = "gzip";
@@ -38,8 +39,9 @@ fn get_gzip_hash_old(file_path: &String) -> String {
         );
     }
 }
-
+*/
 fn get_gzip_hash(file_path: &String) -> String {
+    // changed to compare strings instead of hashs
     println!("getting string for {}", file_path);
     let mut tmp_str: String = String::new();
     let mut reader = MultiGzDecoder::new(
@@ -47,6 +49,23 @@ fn get_gzip_hash(file_path: &String) -> String {
     );
     reader.read_to_string(&mut tmp_str).unwrap();
     tmp_str
+}
+
+fn count_files_recursive(path: &String) -> u64 {
+    let mut count = 0;
+
+    for entry in WalkDir::new(path).follow_links(true) {
+        match entry {
+            Ok(entry) => {
+                if entry.file_type().is_file() {
+                    count += 1;
+                }
+            }
+            Err(err) => eprintln!("Error while processing entry: {}", err),
+        }
+    }
+
+    count
 }
 
 #[test]
@@ -261,7 +280,7 @@ fn testing_demultiplex() {
                 );
             }
             
-            let paths = fs::read_dir(original_path).unwrap();
+            let paths = fs::read_dir(&original_path).unwrap();
             for path in paths {
                 println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
                                                 format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
@@ -283,7 +302,11 @@ fn testing_demultiplex() {
                 
         
             }
-            
+
+            println!("Checking count of files");
+            assert_eq!(count_files_recursive(&ouput_dir),
+                       count_files_recursive(&original_path));
+
             if [7, 8, 9].contains(&ds_itr_tmp){
                 break;
             }

@@ -100,7 +100,7 @@ file naming.
 
 This parameter is used to provide the run id when the parameter `-i` or `--input` is not provided. The parameter is mandatory when Illumina format is requested for read header and file naming.
 
-+ **`--writing-buffer-size`**: The default value is `648686`. The size of the buffer for each sample to be filled with data then written once to the disk.
++ **`--writing-buffer-size`**: The default value is `67108864`. The size of the buffer for each sample to be filled with data then written once to the disk. Smaller buffers will need less memory but makes the tool slower. Largeer buffers need more memory. 
 
 + **`--comprehensive-scan`**: Enable comperhansive scan. 
 
@@ -129,10 +129,11 @@ the number of allowed mismatches is high.
 
 + **`--report-level`**: The level of reporting. [default: 2]
 
-+ **`--compression-level`**: The level of compression (between 0 and 9). 0 is fast but no compression, 9 is slow but high compression. [default: 2]
++ **`--compression-level`**: The level of compression (between 0 and 12). 0 is fast but no compression, 9 is slow but high compression. [default: 1]
 
 + **`--force`**: this flag is to force the run and overwrite the existing output directory if exists.
 
++ **`--flexible`**: By default, the tool will calulate the length of the first read and its all parts and use this information in the analysis for a quicker determination of the read boundaries. `--flexible` option, will make the tool determine the read boundaries based on the `new line` character (`\n`). 
 
 ### Understanding input files
 

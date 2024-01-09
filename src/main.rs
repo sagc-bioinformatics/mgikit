@@ -142,7 +142,7 @@ fn main() {
                 .arg(
                     Arg::new("arg_writing_buffer_size")
                         .long("writing-buffer-size")
-                        .default_value("648686")
+                        .default_value("67108864")
                         .value_parser(clap::value_parser!(usize))
                         .help("The size of the buffer for each sample to be filled with data then written once to the disk.")
                 )
@@ -237,7 +237,7 @@ fn main() {
                 .arg(
                     Arg::new("arg_compression_level")
                         .long("compression-level")
-                        .default_value("2")
+                        .default_value("1")
                         .value_parser(clap::value_parser!(u32))
                         .help("The level of compression (between 0 and 9). 0 is fast but no compression, 9 is slow but high compression.")
                 ).arg(

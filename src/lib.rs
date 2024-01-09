@@ -750,7 +750,7 @@ pub fn demultiplex(
     
     let only_plus_r2:bool = tmp_str == "+\n";
     if ! only_plus_r2{
-        panic!("Expected read format is not satisified. You can try running demultplex-dynamic command.");
+        panic!("Expected read format is not satisified. You can try rerunning using --flexible parameter.");
     }
     tmp_str.clear();
     reader_barcode_read_tmp.read_line(&mut tmp_str).unwrap();
@@ -830,8 +830,8 @@ pub fn demultiplex(
         false => 0
     };
 
-    let mut output_barcode_file_writers: Vec<Option<File>> = Vec::new();
-    let mut output_paired_file_writers: Vec<Option<File>> = Vec::new();
+    let mut output_barcode_file_paths: Vec<Option<String>> = Vec::new();
+    let mut output_paired_file_paths: Vec<Option<String>> = Vec::new();
 
     for i in 0..sample_information.len(){
         sample_mismatches.push(vec![0; 2 * allowed_mismatches + 2]);
@@ -880,6 +880,10 @@ pub fn demultiplex(
             }
 
             
+            output_barcode_file_paths.push(Some(tmp.clone()));
+            output_paired_file_paths.push(Some(tmp1.clone()));
+            
+            /*
             let output_file_path = Path::new(&tmp);
             let outfile = OpenOptions::new()
             .append(true)
@@ -901,10 +905,10 @@ pub fn demultiplex(
             }else{
                 output_paired_file_writers.push(None);
             }
-    
+            */
         }else{
-            output_barcode_file_writers.push(None);
-            output_paired_file_writers.push(None);
+            output_barcode_file_paths.push(None);
+            output_paired_file_paths.push(None);
         }
         
         
@@ -1019,6 +1023,9 @@ pub fn demultiplex(
     let mut actual_sz:usize;
     let mut curr_writing_sample:usize;
     let total_samples:usize = sample_information.len();
+
+    let mut curr_writer: File;
+
     loop {
         //println!("Read: {}", read_cntr);
         if dynamic_demultiplexing{
@@ -1045,7 +1052,7 @@ pub fn demultiplex(
             read_end = barcode_read_length + qual_start;  // \n position.
             if buffer_2[seq_start - 1] != b'\n' || buffer_2[plus_start - 1] != b'\n' ||
                 buffer_2[qual_start - 1] != b'\n' || buffer_2[read_end] != b'\n'{
-                panic!("Expected read format is not satisified. You can try running demultplex-dynamic command.");
+                panic!("Expected read format is not satisified. You can try rerunning using --flexible parameter.");
             }     
         }
         
@@ -1306,7 +1313,7 @@ pub fn demultiplex(
                 read_end_pr = paired_read_length + qual_start_pr;
                 if buffer_1[seq_start_pr - 1] != b'\n' || buffer_1[plus_start_pr - 1] != b'\n' ||
                     buffer_1[qual_start_pr - 1] != b'\n' || buffer_1[read_end_pr] != b'\n'{
-                    panic!("Expected format is not satisified. You can try running demultplex-dynamic command.");
+                    panic!("Expected format is not satisified. You can try rerunning using --flexible parameter.");
                 }     
             }      
         }
@@ -1385,9 +1392,15 @@ pub fn demultiplex(
             curr_buffer_end = 0;
 
                 if out_read_barcode_compression_buffer_last[curr_writing_sample] >= relaxed_writing_buffer_size {
-                    match output_barcode_file_writers[curr_writing_sample]{
-                        Some(ref mut curr_writer) => {
+                    match &output_barcode_file_paths[curr_writing_sample]{
+                        Some(output_file_path) => {
+                            curr_writer = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(output_file_path)
+                            .expect("couldn't create output");
                             curr_writer.write_all(&out_read_barcode_compression_buffer[curr_writing_sample][..out_read_barcode_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            curr_writer.flush().expect("couldn't flush output");
                             out_read_barcode_compression_buffer_last[curr_writing_sample] = 0;
                         },
                         
@@ -1457,9 +1470,15 @@ pub fn demultiplex(
                 curr_buffer_end = 0;
 
                 if out_paired_read_compression_buffer_last[curr_writing_sample] >= relaxed_writing_buffer_size {
-                    match output_paired_file_writers[curr_writing_sample]{
-                        Some(ref mut curr_writer) => {
+                    match &output_paired_file_paths[curr_writing_sample]{
+                        Some(output_file_path) => {
+                            curr_writer = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(output_file_path)
+                            .expect("couldn't create output");
                             curr_writer.write_all(&out_paired_read_compression_buffer[curr_writing_sample][..out_paired_read_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            curr_writer.flush().expect("couldn't flush output");
                             out_paired_read_compression_buffer_last[curr_writing_sample] = 0;
                         },
                         
@@ -1556,16 +1575,18 @@ pub fn demultiplex(
                     actual_sz = compressor.gzip_compress(&out_paired_read_buffer[curr_writing_sample][..out_paired_read_buffer_last[curr_writing_sample]], &mut out_paired_read_compression_buffer[curr_writing_sample][out_paired_read_compression_buffer_last[curr_writing_sample]..]).unwrap();
                     out_paired_read_compression_buffer_last[curr_writing_sample] += actual_sz;
                 
-    
-                
-                    match output_paired_file_writers[curr_writing_sample]{
-                            Some(ref mut curr_writer) => {
-                                curr_writer.write_all(&out_paired_read_compression_buffer[curr_writing_sample][..out_paired_read_compression_buffer_last[curr_writing_sample]]).unwrap();
-                                out_paired_read_compression_buffer_last[curr_writing_sample] = 0;
-                                curr_writer.flush().unwrap();
-                            },
-                            
-                            None => panic!("expeted a writer, but None found!")
+                    match &output_paired_file_paths[curr_writing_sample]{
+                        Some(output_file_path) => {
+                            curr_writer = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(output_file_path)
+                            .expect("couldn't create output");
+                            curr_writer.write_all(&out_paired_read_compression_buffer[curr_writing_sample][..out_paired_read_compression_buffer_last[curr_writing_sample]]).unwrap();
+                            out_paired_read_compression_buffer_last[curr_writing_sample] = 0;
+                            curr_writer.flush().unwrap();
+                        },
+                        None => panic!("expeted a writer, but None found!")
                     };
                 }
         }             
@@ -1575,8 +1596,13 @@ pub fn demultiplex(
                 actual_sz = compressor.gzip_compress(                    &out_read_barcode_buffer[curr_writing_sample][..out_read_barcode_buffer_last[curr_writing_sample]],             &mut out_read_barcode_compression_buffer[curr_writing_sample][out_read_barcode_compression_buffer_last[curr_writing_sample]..]).unwrap();
                 out_read_barcode_compression_buffer_last[curr_writing_sample] += actual_sz;
                 
-                    match output_barcode_file_writers[curr_writing_sample]{
-                        Some(ref mut curr_writer) => {
+                    match &output_barcode_file_paths[curr_writing_sample]{
+                        Some(output_file_path) => {
+                            curr_writer = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(output_file_path)
+                            .expect("couldn't create output");
                             curr_writer.write_all(&out_read_barcode_compression_buffer[curr_writing_sample][..out_read_barcode_compression_buffer_last[curr_writing_sample]]).unwrap();
                             out_read_barcode_compression_buffer_last[curr_writing_sample] = 0;
                             curr_writer.flush().unwrap();
@@ -1602,25 +1628,6 @@ pub fn demultiplex(
     
     
     if sample_mismatches[ambiguous_label_id][0] == 0{
-        let sample_id = ambiguous_label_id;
-        if sample_mismatches[sample_id][0] == 0{
-            let mut tmp = String::from(&output_directory);
-            tmp.push_str(&sample_information[sample_id][SAMPLE_COLUMN]);
-            let mut tmp1 = String::from(&output_directory);
-            tmp1.push_str(&sample_information[sample_id][SAMPLE_COLUMN]);
-            
-            if illumina_format{
-                    tmp.push('_');
-                    tmp1.push('_');
-            }
-            tmp.push_str(&output_file_format_r2);
-            tmp1.push_str(&output_file_format_r1);
-            
-            fs::remove_file(tmp).unwrap();
-            if !single_read_input{
-                fs::remove_file(tmp1).unwrap();
-            }
-        }
         sample_information.pop();
         sample_statistics.pop();
         sample_mismatches.pop();
