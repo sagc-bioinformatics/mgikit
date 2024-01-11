@@ -129,7 +129,7 @@ the number of allowed mismatches is high.
 
 + **`--report-level`**: The level of reporting. [default: 2]
 
-+ **`--compression-level`**: The level of compression (between 0 and 12). 0 is fast but no compression, 9 is slow but high compression. [default: 1]
++ **`--compression-level`**: The level of compression (between 0 and 12). 0 is fast but no compression, 12 is slow but high compression. [default: 1]
 
 + **`--force`**: this flag is to force the run and overwrite the existing output directory if exists.
 
@@ -355,6 +355,127 @@ python setup.py install
 multiqc mgikit-examples/test/
 
 ```
+
+### Performance evaluation
+
+Performance time (in minutes) evaluation and comparison on different datasets. 
+DS01 and DS04 are 10 bp dual index, DS02 and DS3 are 8 bp dual index and DS05 is 8 bp single index.
+In the case of single-end, the R2 file of the dataset is used alone for demultiplexing.
+
+<style type="text/css">
+.tg  {border-collapse:collapse;border-spacing:0;}
+.tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
+  font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
+.tg .tg-c3ow{border-color:inherit;text-align:center;vertical-align:top}
+.tg .tg-g7sd{border-color:inherit;font-weight:bold;text-align:left;vertical-align:middle}
+.tg .tg-uzvj{border-color:inherit;font-weight:bold;text-align:center;vertical-align:middle}
+.tg .tg-7btt{border-color:inherit;font-weight:bold;text-align:center;vertical-align:top}
+.tg .tg-fymr{border-color:inherit;font-weight:bold;text-align:left;vertical-align:top}
+</style>
+<table class="tg">
+<thead>
+  <tr>
+    <th class="tg-g7sd" rowspan="2">Dataset</th>
+    <th class="tg-uzvj" rowspan="2">Reads</th>
+    <th class="tg-uzvj" rowspan="2">Samples</th>
+    <th class="tg-uzvj" colspan="2">Length (bp)</th>
+    <th class="tg-uzvj" colspan="2">Size (GB)</th>
+    <th class="tg-uzvj" rowspan="2">Paired-end</th>
+    <th class="tg-uzvj" rowspan="2">Single-end</th>
+  </tr>
+  <tr>
+    <th class="tg-7btt">R1</th>
+    <th class="tg-7btt">R2</th>
+    <th class="tg-7btt">R1</th>
+    <th class="tg-7btt">R2</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td class="tg-fymr">DS01</td>
+    <td class="tg-c3ow">298303014</td>
+    <td class="tg-c3ow">102</td>
+    <td class="tg-c3ow">300</td>
+    <td class="tg-c3ow">320</td>
+    <td class="tg-c3ow">76</td>
+    <td class="tg-c3ow">85</td>
+    <td class="tg-c3ow">71.5</td>
+    <td class="tg-c3ow">37.2</td>
+  </tr>
+  <tr>
+    <td class="tg-fymr">DS02</td>
+    <td class="tg-c3ow">494667136</td>
+    <td class="tg-c3ow">39</td>
+    <td class="tg-c3ow">148</td>
+    <td class="tg-c3ow">172</td>
+    <td class="tg-c3ow">65</td>
+    <td class="tg-c3ow">75</td>
+    <td class="tg-c3ow">61.5</td>
+    <td class="tg-c3ow">31.8</td>
+  </tr>
+  <tr>
+    <td class="tg-fymr">DS03</td>
+    <td class="tg-c3ow">506600595</td>
+    <td class="tg-c3ow">29</td>
+    <td class="tg-c3ow">100</td>
+    <td class="tg-c3ow">124</td>
+    <td class="tg-c3ow">46</td>
+    <td class="tg-c3ow">55</td>
+    <td class="tg-c3ow">43.5</td>
+    <td class="tg-c3ow">30</td>
+  </tr>
+  <tr>
+    <td class="tg-fymr">DS04</td>
+    <td class="tg-c3ow">274567350</td>
+    <td class="tg-c3ow">5</td>
+    <td class="tg-c3ow">28</td>
+    <td class="tg-c3ow">70</td>
+    <td class="tg-c3ow">8.5</td>
+    <td class="tg-c3ow">19</td>
+    <td class="tg-c3ow">13</td>
+    <td class="tg-c3ow">11.9</td>
+  </tr>
+  <tr>
+    <td class="tg-fymr">DS05</td>
+    <td class="tg-c3ow">500612381</td>
+    <td class="tg-c3ow">64</td>
+    <td class="tg-c3ow">50</td>
+    <td class="tg-c3ow">8</td>
+    <td class="tg-c3ow">22</td>
+    <td class="tg-c3ow">5.5</td>
+    <td class="tg-c3ow">12</td>
+    <td class="tg-c3ow">-</td>
+  </tr>
+</tbody>
+</table>
+
+### Memory utilisation
+
+The default parameters of the tool are optimised to achive high performance. The majority of the memory needed is allocated for output buffering to reduce writing to disk operations.
+
+The expected memory usage is influnced yb three main factors, 
+
+1. Number of samples in the sample sheet.
+2. Writing buffer size (`--writing-buffer-size` parameter, default is `67108864`).
+3. Compression buffer size (`--compression-buffer-size` parameter, default is `131072`).
+4. Single end or paired end input data.
+
+The expected allocated memory is 
+
++ **Single-end input**: `number of smaples * (writing buffer size + 2 * compression buffer size)`.
+
++ **Paired-end input**: `2 * number of smaples * (writing buffer size + 2 * compression buffer size)`.
+
+When using the default parameters:
+
++ **Single-end input**: `number of smaples * 64.25 MB`.
+
++ **Paired-end input**: `2 * number of smaples 64.25 MB`.
+
+Reducing the writing buffer size will reduce the reqiured memory but also affect the performance time.
+
 
 ### Execution examples
 

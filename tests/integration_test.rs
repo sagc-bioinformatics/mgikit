@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 fn get_hash(file_path: &String) -> Vec<u8> {
     println!("Getting hash for the file {}.", file_path);
     let mut f = File::open(file_path).unwrap();
-    let mut buffer = Vec::new();
+    let mut buffer:Vec<u8> = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
     buffer
 }
@@ -159,7 +159,7 @@ fn testing_template() {
 
 #[test]
 fn testing_demultiplex() {
-    for ds_itr_tmp in 1..10{
+    for ds_itr_tmp in 1..11{
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
             6 => 1,
@@ -175,21 +175,23 @@ fn testing_demultiplex() {
             _ => ds_itr_tmp
         };
 
+        let ds_itr_fc = match ds_itr_in{
+            10 => 1,
+            _ => ds_itr_in
+        };
+
         let input_folder_path = match ds_itr_tmp == 6 {
             false => String::new(),
             true => String::from(format!("testing_data/input/ds0{}/L01/", ds_itr_in))
         };
         
-        let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_in));
-        let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_in));
+        let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_fc));
+        let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_fc));
         let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.tsv", ds_itr_ex));
         let lane = String::from("L01");
         let mut instrument = String::from("instrument_1"); 
         let mut run = String::from("20231212"); 
         let mut comprehensive_scan = false;
-        
-        let mut digest_new;
-        let mut digest_original;
         
         if ds_itr_tmp == 5 || ds_itr_tmp == 2 {
             comprehensive_scan = true;
@@ -293,8 +295,9 @@ fn testing_demultiplex() {
                     assert_eq!(crc_new, crc_original);
 
                 }else{
-                    digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
-                    digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                    
+                    let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                    let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
                     assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
                 
                 }
@@ -307,7 +310,7 @@ fn testing_demultiplex() {
             assert_eq!(count_files_recursive(&ouput_dir),
                        count_files_recursive(&original_path));
 
-            if [7, 8, 9].contains(&ds_itr_tmp){
+            if [7, 8, 9, 10].contains(&ds_itr_tmp){
                 break;
             }
             

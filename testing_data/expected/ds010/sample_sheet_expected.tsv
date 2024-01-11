@@ -1,0 +1,5 @@
+sample_id	i7	i5	job_number	template	i7_rc	i5_rc
+Sample01	ACGGGCAT	GGCTAGAG	.	i78:i58	0	0
+Sample02	ACGCTAAT	GGCTAGAG	.	i78:i58	0	0
+Sample03	ACGCCCAT	GGCCAGAG	.	i78:i58	0	0
+Sample04	GGGTCGAT	GGGGACTA	.	i78:i58	0	0
