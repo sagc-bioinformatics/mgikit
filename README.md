@@ -38,9 +38,24 @@ This command is to merge demultiplexing and quality reports from multiple lanes 
 
 <hr/>
 
+## Installation
+
+You can use the static binary under bins directly, however, if you like to build it from the source code:
+
+You need to have Rust and cargo installed first, check rust [documenation](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+
+```bash
+git clone https://github.com/sagc-bioinformatics/mgikit.git
+cd mgikit
+cargo build --release
+```
+
+
+
 ## User Guide
 
 Please checkout the [documeantion](https://sagc-bioinformatics.github.io/mgikit/)
+
 
 ## Commerical Use
 

@@ -239,13 +239,19 @@ fn main() {
                         .long("compression-level")
                         .default_value("1")
                         .value_parser(clap::value_parser!(u32))
-                        .help("The level of compression (between 0 and 9). 0 is fast but no compression, 9 is slow but high compression.")
+                        .help("The level of compression (between 0 and 12). 0 is fast but no compression, 12 is slow but high compression.")
                 ).arg(
                     Arg::new("arg_dynamic")
                         .long("flexible")
                         .action(ArgAction::SetTrue)
                         .default_value("false")
                         .help("Determine reads based on the new lines rather than the expect length of the read parts.")
+                ).arg(
+                    Arg::new("arg_compression_buffer_size")
+                        .long("compression-buffer-size")
+                        .default_value("131072")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The size of the buffer for data compression for each sample.")
                 )
         )
         .subcommand(
@@ -373,6 +379,8 @@ fn main() {
                 let arg_report_level: &usize = demultiplex_command.get_one::<usize>("arg_report_level").unwrap();
                 let arg_compression_level: &u32 = demultiplex_command.get_one::<u32>("arg_compression_level").unwrap();
                 let arg_dynamic:  &bool = demultiplex_command.get_one::<bool>("arg_dynamic").unwrap();
+                let arg_compression_buffer_size:  &usize = demultiplex_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
+                
                 
                 match demultiplex(
                     arg_input_folder_path,
@@ -401,7 +409,8 @@ fn main() {
                     arg_info_file,
                     *arg_report_level,
                     *arg_compression_level,
-                    *arg_dynamic
+                    *arg_dynamic,
+                    *arg_compression_buffer_size
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),
