@@ -8,7 +8,9 @@ use chrono;
 use mgikit::*;
 use termion::terminal_size;
 use clap::{ArgAction, Command, Arg};
-
+use log::{info, LevelFilter};
+use env_logger::{Builder, Target};
+use std::env; 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_logo(){
@@ -43,7 +45,7 @@ fn print_logo(){
 fn main() {
 
     print_logo();
-
+    
     {
         let matches = Command::new("MGIKIT - MGI data demultipexing kit.")
         .about("mgikit is a multiple commands to support MGI fastq demultiplexing.")
@@ -188,7 +190,7 @@ fn main() {
                         .long("force")
                         .action(ArgAction::SetTrue)
                         .default_value("false")
-                        .help("Force running th etoll and overwrite existed output/report files.")
+                        .help("Force running the tool and overwrite existed output/report files.")
                 )
                 .arg(
                     Arg::new("arg_report_limit")
@@ -232,7 +234,7 @@ fn main() {
                         .long("report-level")
                         .default_value("2")
                         .value_parser(clap::value_parser!(usize))
-                        .help("The level of reporting.")
+                        .help("The level of reporting. 0 no reports will be generated!, 1 data quality and demultipexing reports. 2: all reports (reports on data quality, demultipexing, undetermined and ambigouse barcodes).")
                 ) 
                 .arg(
                     Arg::new("arg_compression_level")
@@ -240,19 +242,36 @@ fn main() {
                         .default_value("1")
                         .value_parser(clap::value_parser!(u32))
                         .help("The level of compression (between 0 and 12). 0 is fast but no compression, 12 is slow but high compression.")
-                ).arg(
+                )
+                .arg(
                     Arg::new("arg_dynamic")
                         .long("flexible")
                         .action(ArgAction::SetTrue)
                         .default_value("false")
                         .help("Determine reads based on the new lines rather than the expect length of the read parts.")
-                ).arg(
+                )
+                .arg(
                     Arg::new("arg_compression_buffer_size")
                         .long("compression-buffer-size")
                         .default_value("131072")
                         .value_parser(clap::value_parser!(usize))
                         .help("The size of the buffer for data compression for each sample.")
                 )
+                .arg(
+                    Arg::new("arg_ignore_undetermined")
+                        .long("ignore-undetermined")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("Do not stop if there are many undetermined reads in the dataset.")
+                )
+                .arg(
+                    Arg::new("arg_log_path")
+                        .long("log")
+                        .default_value("")
+                        .help("Path to the output log, instead of writing to the stdout.")
+                )
+                
+                
         )
         .subcommand(
             Command::new("template")
@@ -345,10 +364,144 @@ fn main() {
                         .help("output directory")
                 )               
         )
+        .subcommand(
+            Command::new("extras")
+                .about("Reformat MGI fastq headers to Illumina's and prepare quality report.")
+                .arg(
+                    Arg::new("arg_input_folder_path")
+                        .short('i')
+                        .default_value("")
+                        .long("input")
+                        .help("The path to the input files. GLOB patterns are accepted.")
+                )
+                .arg(
+                    Arg::new("arg_read2_file_path")
+                        .short('r')
+                        .long("read2")
+                        .alias("2")
+                        .default_value("")
+                        .help("The path to read2.fastq.gz See the example for the required format.")
+                )
+                .arg(
+                    Arg::new("arg_read1_file_path")
+                        .short('f')
+                        .long("read1")
+                        .alias("1")
+                        .default_value("")
+                        .help("The path to read1.fastq.gz See the example for the required format.")
+                )
+                .arg(
+                    Arg::new("arg_ouput_dir")
+                        .short('o')
+                        .long("output")
+                        .default_value("")
+                        .help("Path to the output folder. If not provided, the output will be written at mgiKit_ followed by current data and time.")
+                )
+                .arg(
+                    Arg::new("arg_report_dir")
+                        .long("reports")
+                        .default_value("")
+                        .help("Prefix of report file. If not provided, the output will be written at output_ followed by current data and time.")
+                )
+                
+                .arg(
+                    Arg::new("arg_info_file")
+                        .long("info-file")
+                        .default_value("")
+                        .help("The path to the info file that contains the run information (similar to `BioInfo.csv` generated by MGI machines under the lane directory). Check the documenation from more details.")
+                ).arg(
+                    Arg::new("arg_compression_level")
+                        .long("compression-level")
+                        .default_value("1")
+                        .value_parser(clap::value_parser!(u32))
+                        .help("The level of compression (between 0 and 12). 0 is fast but no compression, 12 is slow but high compression.")
+                ).arg(
+                    Arg::new("arg_dynamic")
+                        .long("flexible")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("Determine reads based on the new lines rather than the expect length of the read parts.")
+                ).arg(
+                    Arg::new("arg_compression_buffer_size")
+                        .long("compression-buffer-size")
+                        .default_value("131072")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The size of the buffer for data compression for each sample.")
+                )
+                .arg(
+                    Arg::new("arg_disable_illumina_format")
+                        .long("disable-illumina")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("Disable illumina file naming and read header format. Output file names and reads' header using MGI format.")
+                )
+                
+                .arg(
+                    Arg::new("arg_umi_length")
+                        .long("umi-length")
+                        .default_value("0")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The length of UMI expected at the end of the read (r1 for single-end, or r2 for paired-end).")
+                )
+                .arg(
+                    Arg::new("arg_writing_buffer_size")
+                        .long("writing-buffer-size")
+                        .default_value("67108864")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The size of the buffer for each sample to be filled with data then written once to the disk.")
+                )
+                .arg(
+                    Arg::new("arg_lane")
+                        .long("lane")
+                        .default_value("")
+                        .help("The lane number, required for Illumina format.")
+                )
+                .arg(
+                    Arg::new("arg_instrument")
+                        .long("instrument")
+                        .default_value("")
+                        .help("The Id of the instrument required for Illumina format.")
+                )
+                .arg(
+                    Arg::new("arg_run")
+                        .long("run")
+                        .default_value("")
+                        .help("The run number, required for Illumina format.")
+                )
+                .arg(
+                    Arg::new("arg_sample_index")
+                        .long("sample-index")
+                        .default_value("1")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The index of the sample in the sample sheet, needed for file naming.")
+                )
+                .arg(
+                    Arg::new("arg_force")
+                        .long("force")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("Force running the tool and overwrite existed output/report files.")
+                )
+                .arg(
+                    Arg::new("arg_report_level")
+                        .long("report-level")
+                        .default_value("2")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The level of reporting. 0 no reports will be generated!, 1 data quality and demultipexing reports. 2: all reports (reports on data quality, demultipexing, undetermined and ambigouse barcodes).")
+                ) 
+                
+                
+                               
+        )
         .get_matches();
         
+
+
+        Builder::new().filter_level(LevelFilter::max()).target(Target::Stdout).init();
+        let args: Vec<String> = env::args().collect();
+        info!("Complete Command: {}", args.join(" "));
         let start = Instant::now();
-        println!("Exection start time: {:?}", chrono::offset::Local::now());
+        info!("Exection start time: {:?}", chrono::offset::Local::now());
     
         match matches.subcommand() {
             Some(("demultiplex", demultiplex_command)) => {
@@ -380,7 +533,7 @@ fn main() {
                 let arg_compression_level: &u32 = demultiplex_command.get_one::<u32>("arg_compression_level").unwrap();
                 let arg_dynamic:  &bool = demultiplex_command.get_one::<bool>("arg_dynamic").unwrap();
                 let arg_compression_buffer_size:  &usize = demultiplex_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
-                
+                let arg_ignore_undetermined:  &bool = demultiplex_command.get_one::<bool>("arg_ignore_undetermined").unwrap();
                 
                 match demultiplex(
                     arg_input_folder_path,
@@ -410,7 +563,8 @@ fn main() {
                     *arg_report_level,
                     *arg_compression_level,
                     *arg_dynamic,
-                    *arg_compression_buffer_size
+                    *arg_compression_buffer_size,
+                    *arg_ignore_undetermined
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),
@@ -447,16 +601,60 @@ fn main() {
                     *arg_max_umi_length
                 );
             },
+            Some(("extras", extras_command)) => {
+                
+                let arg_input_folder_path: &String = extras_command.get_one::<String>("arg_input_folder_path").unwrap();
+                let arg_read1_file_path: &String = extras_command.get_one::<String>("arg_read1_file_path").unwrap();
+                let arg_read2_file_path: &String = extras_command.get_one::<String>("arg_read2_file_path").unwrap();
+                let arg_ouput_dir: &String = extras_command.get_one::<String>("arg_ouput_dir").unwrap();
+                let arg_report_dir: &String = extras_command.get_one::<String>("arg_report_dir").unwrap();
+                let arg_lane: &String = extras_command.get_one::<String>("arg_lane").unwrap();
+                let arg_instrument: &String = extras_command.get_one::<String>("arg_instrument").unwrap();
+                let arg_run: &String = extras_command.get_one::<String>("arg_run").unwrap();
+                let arg_disable_illumina_format: &bool = extras_command.get_one::<bool>("arg_disable_illumina_format").unwrap();
+                let arg_writing_buffer_size: &usize = extras_command.get_one::<usize>("arg_writing_buffer_size").unwrap();
+                let arg_force: &bool = extras_command.get_one::<bool>("arg_force").unwrap();
+                let arg_report_limit: &usize = &0;//extras_command.get_one::<usize>("arg_report_limit").unwrap();
+                let arg_info_file: &String = extras_command.get_one::<String>("arg_info_file").unwrap();
+                let arg_report_level: &usize = extras_command.get_one::<usize>("arg_report_level").unwrap();
+                let arg_compression_level: &u32 = extras_command.get_one::<u32>("arg_compression_level").unwrap();
+                let arg_compression_buffer_size:  &usize = extras_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
+                let arg_umi_length: &usize = extras_command.get_one::<usize>("arg_umi_length").unwrap();
+                let arg_sample_index: &usize = extras_command.get_one::<usize>("arg_sample_index").unwrap();
+                
+                match post_processing(
+                    arg_read1_file_path,
+                    arg_read2_file_path,
+                    arg_ouput_dir,
+                    arg_report_dir,
+                    arg_lane,
+                    arg_instrument,
+                    arg_run,
+                    !*arg_disable_illumina_format,
+                    *arg_writing_buffer_size,
+                    *arg_force,
+                    *arg_report_limit,
+                    arg_info_file,
+                    *arg_report_level,
+                    *arg_compression_level,
+                    *arg_compression_buffer_size,
+                    *arg_umi_length,
+                    *arg_sample_index
+                ) {
+                    Ok(_) => {},
+                    Err(err) => eprintln!("Error: {}", err),
+                };
+            },
             Some((command_nm, _)) => {
-                panic!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, or template)!", command_nm);
+                panic!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, template, or extras)!", command_nm);
             }
             None => {
-                panic!("Please enter a command to perform from (demultiplex, report, or template)!");
+                panic!("Please enter a command to perform from (demultiplex, report, template, or extras)!");
             }
         }
         let dur = start.elapsed();
-        println!("{} seconds for performing the task.", dur.as_secs());
-        println!("Exection end time: {:?}", chrono::offset::Local::now());
+        info!("{} seconds for performing the task.", dur.as_secs());
+        info!("Exection end time: {:?}", chrono::offset::Local::now());
     }
 }
 

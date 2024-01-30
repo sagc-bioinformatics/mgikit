@@ -222,11 +222,26 @@ fn testing_demultiplex() {
                                                 run.to_string(), 
                                                 "--instrument".to_string(), 
                                                 instrument.to_string(), 
-                                                "-o".to_string(), 
+                                                "--writing-buffer-size".to_string(), 
+                                                "131072".to_string(), 
+                                                "-o".to_string(),
                                                 ouput_dir.to_string(), 
                                                 "-m".to_string(), 
                                                 format!("{}", allowed_mismatches), 
                                                 "--force".to_string()];
+            
+            
+            if comprehensive_scan{
+                my_args.push("--comprehensive-scan".to_string());
+            }
+            if disable_illumina_format{
+                my_args.push("--disable-illumina".to_string());
+            }
+            if ds_itr_tmp ==  9{
+                my_args.push("--template".to_string());
+                my_args.push("i78:--8".to_string());
+                
+            }
             
             println!("{:?}", vec!["demultiplex".to_string(),
             "-f".to_string(),
@@ -249,18 +264,6 @@ fn testing_demultiplex() {
             format!("{}", allowed_mismatches), 
             "--force".to_string()]);
 
-            if comprehensive_scan{
-                my_args.push("--comprehensive-scan".to_string());
-            }
-            if disable_illumina_format{
-                my_args.push("--disable-illumina".to_string());
-            }
-            if ds_itr_tmp ==  9{
-                my_args.push("--template".to_string());
-                my_args.push("i78:--8".to_string());
-                
-            }
-            
 
             let output = Command::new(command)
                 .args(my_args)
@@ -318,4 +321,159 @@ fn testing_demultiplex() {
     }
         
 }
+
+#[test]
+fn testing_extras() {
+    for mut ds_itr_tmp in 1..7{
+        println!("Testing iteration: {}", ds_itr_tmp);
+        let mut expected_itr: i32;
+        let mut input_itr: i32;
+        let mut output_itr: i32;
+        
+        match ds_itr_tmp{ 
+            4 =>{
+                expected_itr = 1;
+                input_itr = 1;
+                output_itr = 1;
+            }, 
+            5 =>{
+                expected_itr = ds_itr_tmp;
+                input_itr = 1;
+                output_itr = ds_itr_tmp;
+            },
+            6 =>{
+                expected_itr = ds_itr_tmp;
+                input_itr = 1;
+                output_itr = ds_itr_tmp;
+            }, 
+            _ =>{
+                expected_itr = ds_itr_tmp;
+                input_itr = ds_itr_tmp;
+                output_itr = ds_itr_tmp;
+            }, 
+            
+          }
+
+        let mut disable_illumina_format = false;
+        let mut read1_file_path: String;
+        let mut read2_file_path: String;
+        let lane = String::from("L01");
+        let mut instrument = String::from("instrument_1"); 
+        let mut run = String::from("20231212"); 
+        
+        if ds_itr_tmp == 3{
+            read1_file_path = String::from(format!("testing_data/input/extras_test/FC03_L01_sample{}_1.fq.gz", input_itr));
+            read2_file_path = String::from(format!("testing_data/input/extras_test/FC03_L01_sample{}_2.fq.gz", input_itr));
+            instrument = String::from("instrument_3");
+            run = String::from("20230727"); 
+        }else{
+            read1_file_path = String::from(format!("testing_data/input/extras_test/FC01_L01_sample{}_1.fq.gz", input_itr));
+            read2_file_path = String::from(format!("testing_data/input/extras_test/FC01_L01_sample{}_2.fq.gz", input_itr));
+            
+        }
+        
+        let ouput_dir     = format!("testing_data/output/extras_test/ds{}/", output_itr);
+        let original_path = format!("testing_data/expected/extras_test/ds{}/", expected_itr);
+           
+        let command = "target/debug/mgikit";
+        let mut my_args: Vec<String> = vec!["extras".to_string(),
+                                                "-f".to_string(),
+                                                read1_file_path.to_string(), 
+                                                "-r".to_string(), 
+                                                read2_file_path.to_string(), 
+                                                "--lane".to_string(), 
+                                                lane.to_string(), 
+                                                "-o".to_string(), 
+                                                ouput_dir.to_string(),
+                                                "--force".to_string(),
+                                                "--sample-index".to_string(),
+                                                input_itr.to_string(),];
+            
+        
+
+        if disable_illumina_format{
+            my_args.push("--disable-illumina".to_string());
+        }
+        
+        if ds_itr_tmp == 2{
+            my_args.push("--umi-length".to_string());
+            my_args.push("8".to_string());
+            
+        }
+        if ds_itr_tmp == 3{
+            my_args.push("--umi-length".to_string());
+            my_args.push("20".to_string());
+        }
+
+        if [1, 2, 3, 5].contains(&ds_itr_tmp){
+            my_args.push("--run".to_string());
+            my_args.push(run.to_string());
+            my_args.push("--instrument".to_string());
+            my_args.push(instrument.to_string());
+        }else{
+            my_args.push("--info-file".to_string());
+            my_args.push("testing_data/input/extras_test/BioInfo.csv".to_string());
+            
+        }
+        if ds_itr_tmp == 5{
+            my_args.push("--disable-illumina".to_string());
+        }
+        if ds_itr_tmp == 6{
+            my_args.push("--report-level".to_string());
+            my_args.push("0".to_string());
+        }
+        
+
+        //println!("{:?}", vec![]);
+
+
+        let output = Command::new(command)
+            .args(my_args)
+            .output() // Capture the output of the command.
+            .expect("Failed to execute command");
+        
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+            let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+            println!("Command output:\n{} -> {}", meta_info[1], output_str);
+            
+        } else {
+            panic!(
+                "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+        
+        let paths = fs::read_dir(&original_path).unwrap();
+        for path in paths {
+            println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                            format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+            
+            if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                
+                let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                
+                let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                assert_eq!(crc_new, crc_original);
+
+            }else{
+                
+                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+            
+            }
+
+        }
+
+        println!("Checking count of files");
+        assert_eq!(count_files_recursive(&ouput_dir),
+                    count_files_recursive(&original_path));
+        
+    }
+}
+        
 
