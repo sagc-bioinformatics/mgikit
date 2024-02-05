@@ -362,7 +362,19 @@ fn main() {
                         .short('o')
                         .long("output")
                         .help("output directory")
-                )               
+                ).arg(
+                    Arg::new("arg_lane")
+                        .long("lane")
+                        .default_value("all")
+                        .help("The lane number, required for report name.")
+                )
+                .arg(
+                    Arg::new("arg_prefix")
+                        .long("prefix")
+                        .default_value("")
+                        .help("The prefix of the report. By default, it is the first part of the last input report.")
+                )
+                              
         )
         .subcommand(
             Command::new("extras")
@@ -488,7 +500,13 @@ fn main() {
                         .default_value("2")
                         .value_parser(clap::value_parser!(usize))
                         .help("The level of reporting. 0 no reports will be generated!, 1 data quality and demultipexing reports. 2: all reports (reports on data quality, demultipexing, undetermined and ambigouse barcodes).")
-                ) 
+                )
+                .arg(
+                    Arg::new("arg_barcode")
+                        .long("barcode")
+                        .default_value("")
+                        .help("The barcode of the specific sample to calulate the mismatches for the reports. If not provided, no mismtahces will be calculated.")
+                )  
                 
                 
                                
@@ -573,9 +591,14 @@ fn main() {
             Some(("report", report_command)) => {
                 let arg_ouput_dir: &String = report_command.get_one::<String>("arg_ouput_dir").unwrap();
                 let arg_qc_report_path: Vec<String> = report_command.get_many::<String>("arg_qc_report_path").unwrap().map(|it: &String| it.to_string()).collect::<Vec<_>>();
+                let arg_lane: &String = report_command.get_one::<String>("arg_lane").unwrap();
+                let arg_prefix: &String = report_command.get_one::<String>("arg_prefix").unwrap();
+                
                 merge_qc_reports(
                     &arg_qc_report_path, 
-                    arg_ouput_dir);
+                    arg_ouput_dir,
+                    &arg_lane,
+            &arg_prefix);
                 
             },
             Some(("template", template_command)) => {
@@ -603,7 +626,7 @@ fn main() {
             },
             Some(("extras", extras_command)) => {
                 
-                let arg_input_folder_path: &String = extras_command.get_one::<String>("arg_input_folder_path").unwrap();
+                //let arg_input_folder_path: &String = extras_command.get_one::<String>("arg_input_folder_path").unwrap();
                 let arg_read1_file_path: &String = extras_command.get_one::<String>("arg_read1_file_path").unwrap();
                 let arg_read2_file_path: &String = extras_command.get_one::<String>("arg_read2_file_path").unwrap();
                 let arg_ouput_dir: &String = extras_command.get_one::<String>("arg_ouput_dir").unwrap();
@@ -621,6 +644,7 @@ fn main() {
                 let arg_compression_buffer_size:  &usize = extras_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
                 let arg_umi_length: &usize = extras_command.get_one::<usize>("arg_umi_length").unwrap();
                 let arg_sample_index: &usize = extras_command.get_one::<usize>("arg_sample_index").unwrap();
+                let arg_barcode: &String = extras_command.get_one::<String>("arg_barcode").unwrap();
                 
                 match post_processing(
                     arg_read1_file_path,
@@ -639,7 +663,8 @@ fn main() {
                     *arg_compression_level,
                     *arg_compression_buffer_size,
                     *arg_umi_length,
-                    *arg_sample_index
+                    *arg_sample_index,
+                    arg_barcode
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),

@@ -324,7 +324,7 @@ fn testing_demultiplex() {
 
 #[test]
 fn testing_extras() {
-    for mut ds_itr_tmp in 1..7{
+    for mut ds_itr_tmp in 1..8{
         println!("Testing iteration: {}", ds_itr_tmp);
         let mut expected_itr: i32;
         let mut input_itr: i32;
@@ -345,7 +345,12 @@ fn testing_extras() {
                 expected_itr = ds_itr_tmp;
                 input_itr = 1;
                 output_itr = ds_itr_tmp;
-            }, 
+            },
+            7 =>{
+                expected_itr = ds_itr_tmp;
+                input_itr = 1;
+                output_itr = ds_itr_tmp;
+            },
             _ =>{
                 expected_itr = ds_itr_tmp;
                 input_itr = ds_itr_tmp;
@@ -355,8 +360,8 @@ fn testing_extras() {
           }
 
         let mut disable_illumina_format = false;
-        let mut read1_file_path: String;
-        let mut read2_file_path: String;
+        let read1_file_path: String;
+        let read2_file_path: String;
         let lane = String::from("L01");
         let mut instrument = String::from("instrument_1"); 
         let mut run = String::from("20231212"); 
@@ -421,6 +426,10 @@ fn testing_extras() {
         if ds_itr_tmp == 6{
             my_args.push("--report-level".to_string());
             my_args.push("0".to_string());
+        }
+        if ds_itr_tmp == 7{
+            my_args.push("--barcode".to_string());
+            my_args.push("TCCGTTGAAA".to_string());
         }
         
 
