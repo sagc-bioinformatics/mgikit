@@ -261,6 +261,7 @@ fn parse_info_file(info_file_path: &PathBuf) -> (String, String){
 }
 
 fn prepare_output_report_dir(ouput_dir_arg: &String, report_dir_arg: &String, force:bool) -> (PathBuf, PathBuf){
+    let use_same_dir :bool;
     let output_directory = if ouput_dir_arg.len() == 0 {
             PathBuf::from(&Local::now().format("mgiKit_%Y%m%dT%H%M%S").to_string())
         }else{
@@ -269,9 +270,12 @@ fn prepare_output_report_dir(ouput_dir_arg: &String, report_dir_arg: &String, fo
 
     let report_directory = if report_dir_arg.len() == 0 {
             info!("The same output directory will be used for reports.");
+            use_same_dir = true;
             output_directory.clone()
         }else{
+            use_same_dir = false;
             PathBuf::from(report_dir_arg)
+            
         };
     
     
@@ -289,12 +293,15 @@ fn prepare_output_report_dir(ouput_dir_arg: &String, report_dir_arg: &String, fo
     }
 
     if report_directory.is_dir(){
-        if !force {
-            panic!("Report directly exists. Use --froce to overwrite their data: {}", report_directory.display());
-        }else{
-            info!(
-            "Report directory exists. Data will be overwritten at: {}.", report_directory.display());
+        if !use_same_dir{
+            if !force {
+                panic!("Report directly exists. Use --froce to overwrite their data: {}", report_directory.display());
+            }else{
+                info!(
+                "Report directory exists. Data will be overwritten at: {}.", report_directory.display());
+            }
         }
+        
     }else {
         create_folder(&report_directory);
     }
@@ -1560,7 +1567,7 @@ pub fn demultiplex(
             
             if read_end_pr + whole_paired_read_len >= read_bytes_1 {
                 //println!("R1: {}-{}-{}-{}-{}", read_cntr, whole_paired_read_len, header_start_pr, read_end_pr, read_bytes_1);
-                if read_end_pr < read_bytes_1 - 1 && header_start_pr > 0 {
+                if read_end_pr < read_bytes_1 - 1 {
                     copy_within_a_slice(&mut buffer_1, read_end_pr + 1, 0, read_bytes_1 - read_end_pr - 1);
                     read_bytes_1 -= read_end_pr + 1;
                     header_start_pr = 0;
@@ -1576,6 +1583,7 @@ pub fn demultiplex(
                     Some(ref mut reader) => {
                         loop{
                             curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
+                            //println!("R1 read: {}  -  {}", read_cntr, curr_bytes);
                             read_bytes_1 += curr_bytes;
                             if read_bytes_1 > whole_paired_read_len || curr_bytes == 0{
                                 break;
@@ -1592,7 +1600,7 @@ pub fn demultiplex(
 
         if read_end + whole_read_barcode_len >= read_bytes_2{
             //println!("R2: {}-{}-{}-{}-{}", read_cntr, whole_read_barcode_len, header_start, read_end, read_bytes_2);
-            if read_end < read_bytes_2 - 1 && header_start > 0 {
+            if read_end < read_bytes_2 - 1 {
                 copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end - 1);
                 read_bytes_2 -= read_end + 1;
                 header_start = 0;
@@ -1606,6 +1614,8 @@ pub fn demultiplex(
             
             loop{
                 curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
+                //println!("R2 read: {}  -  {}", read_cntr, curr_bytes);
+            
                 read_bytes_2 += curr_bytes;
                 if read_bytes_2 > whole_read_barcode_len || curr_bytes == 0{
                     break;
@@ -2797,7 +2807,7 @@ pub fn post_processing(
 
         if ! single_read_input{
             if read_end_pr + whole_paired_read_len >= read_bytes_1 {      
-                if read_end_pr < read_bytes_1 - 1 && header_start_pr > 0 {
+                if read_end_pr < read_bytes_1 - 1 {
                     copy_within_a_slice(&mut buffer_1, read_end_pr + 1, 0, read_bytes_1 - read_end_pr - 1);
                     read_bytes_1 -= read_end_pr + 1;
                     header_start_pr = 0;
@@ -2826,7 +2836,7 @@ pub fn post_processing(
         
         
         if read_end + whole_read_barcode_len >= read_bytes_2{
-            if read_end < read_bytes_2 - 1 && header_start > 0 {
+            if read_end < read_bytes_2 - 1 {
                 copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end - 1);
                 read_bytes_2 -= read_end + 1;
                 header_start = 0;
