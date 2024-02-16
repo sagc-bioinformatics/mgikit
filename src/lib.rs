@@ -628,6 +628,16 @@ fn get_read_parts(reader: &mut dyn BufRead) -> (String, String, String, String){
     (header, seq, info, quality)
 }
 
+fn read_bytes(reader: &mut Box< dyn Read>, buffer: &mut[u8], minimum:usize, last_byte: &mut usize){
+    let mut curr_bytes: usize;
+    loop{
+        curr_bytes = reader.read(&mut buffer[*last_byte..]).unwrap();
+        *last_byte += curr_bytes;
+        if *last_byte > minimum || curr_bytes == 0{
+            return;
+        }
+    }
+}
 
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
@@ -748,7 +758,7 @@ pub fn demultiplex(
     
     //  Get reads information 
 
-    let whole_read_barcode_len: usize ;
+    let mut whole_read_barcode_len: usize ;
     let mut whole_paired_read_len: usize = 0;
     let barcode_read_length: usize;
     let mut paired_read_length: usize = 0;
@@ -888,6 +898,8 @@ pub fn demultiplex(
     let mut out_read_barcode_compression_buffer_last: [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
     let mut out_paired_read_compression_buffer_last : [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
 
+    let mut extra_comfort_barcode: usize = whole_read_barcode_len + illumina_header_prefix.len() + barcode_length + 25;
+    let mut extra_comfort_paired: usize = whole_paired_read_len + illumina_header_prefix.len() + barcode_length + 25;
     
 
     //let available_memory: u64 = System::new_all().get_available_memory();
@@ -1003,19 +1015,12 @@ pub fn demultiplex(
 
     let mut buffer_1 = [0; BUFFER_SIZE];  // paired read
     let mut buffer_2 = [0; BUFFER_SIZE]; // read with barcode
-    let mut curr_bytes:usize;
     
     let mut read_bytes_1: usize = 0;
     if !single_read_input{
         match reader_paired_read{
             Some(ref mut reader) => {
-                loop{
-                    curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                    read_bytes_1 += curr_bytes;
-                    if read_bytes_1 > whole_paired_read_len || curr_bytes == 0{
-                        break;
-                    }
-                }               
+                read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
             },
             None => panic!("expected single end input!")
         }
@@ -1023,20 +1028,13 @@ pub fn demultiplex(
             panic!("No data in R1!");
         }
     }
-    
-    
+        
     let mut read_bytes_2: usize = 0;
-    loop{
-        curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-        read_bytes_2 += curr_bytes;
-        if read_bytes_2 > whole_read_barcode_len || curr_bytes == 0{
-            break;
-        }
-    } 
+    read_bytes(&mut reader_barcode_read, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
     if read_bytes_2 == 0{
         panic!("No data in R2!");
     }
-        
+    
 
     let mut header_start: usize = 0;
     let mut read_end: usize;
@@ -1055,7 +1053,6 @@ pub fn demultiplex(
     let mut actual_sz:usize;
     let mut curr_writing_sample:usize;
     
-
     let mut curr_writer: File;
     let mut curr_buffer_limit:usize;
     let mut undertmined_threshold_check = 1000;
@@ -1078,6 +1075,11 @@ pub fn demultiplex(
                 None => { panic!("Something wrong with the input data!");},
                 Some(loc) => {qual_start + loc}
             };
+            whole_read_barcode_len = read_end - header_start;
+            extra_comfort_barcode  = whole_read_barcode_len + illumina_header_prefix.len() + barcode_length + 25;
+    
+            
+
         }else{
             seq_start = header_start + header_length_r2;
             plus_start = seq_start + barcode_read_length + 1;
@@ -1352,6 +1354,10 @@ pub fn demultiplex(
                     None => { panic!("Something wrong with the input data!");},
                     Some(loc) => {loc + qual_start_pr}
                 };
+                whole_paired_read_len = read_end_pr - header_start_pr;
+                extra_comfort_paired = whole_paired_read_len + illumina_header_prefix.len() + barcode_length + 25;
+    
+
             }else{
                 seq_start_pr = header_start_pr + header_length_r1;
                 plus_start_pr = seq_start_pr + paired_read_length + 1;
@@ -1422,11 +1428,6 @@ pub fn demultiplex(
             }
 
         }
-
-        
-       
-        
-                
                 
         sample_mismatches[sample_id][0] += 1;
         sample_mismatches[sample_id][curr_mismatch + 1] += 1;
@@ -1437,7 +1438,7 @@ pub fn demultiplex(
         curr_buffer_end = out_read_barcode_compression_buffer_last[curr_writing_sample];
         curr_buffer_limit =  curr_writing_sample * compression_buffer_size + compression_buffer_size;
         // this works for mgi format and unde and ambig and ilumina with a bit of extr
-        if curr_buffer_end + read_end - header_start + illumina_header_prefix.len() >= curr_buffer_limit {
+        if curr_buffer_end + extra_comfort_barcode >= curr_buffer_limit {
             actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[curr_writing_sample * compression_buffer_size..curr_buffer_end],
                                    &mut out_read_barcode_buffer[curr_writing_sample][out_read_barcode_buffer_last[curr_writing_sample]..]).unwrap();
             out_read_barcode_buffer_last[curr_writing_sample] += actual_sz;
@@ -1504,12 +1505,18 @@ pub fn demultiplex(
             curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
             out_read_barcode_compression_buffer[curr_buffer_end - 1] = b'\n';
             out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end;
+
+            if curr_buffer_end >= curr_buffer_limit{
+                // remove if it does not happen again!
+                panic!("R2 exceeds the buffer limit! somthing wrong with writing to the buffers!");
+            }
     
         }
         
         if ! single_read_input{
             curr_buffer_end = out_paired_read_compression_buffer_last[curr_writing_sample];
-            if curr_buffer_end + read_end_pr - header_start_pr + illumina_header_prefix.len() >= curr_buffer_limit{                
+            if curr_buffer_end + extra_comfort_paired >= curr_buffer_limit{                
+                
                 actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[curr_writing_sample * compression_buffer_size .. curr_buffer_end], 
                     &mut out_paired_read_buffer[curr_writing_sample][out_paired_read_buffer_last[curr_writing_sample]..]).unwrap();
                 out_paired_read_buffer_last[curr_writing_sample] += actual_sz;
@@ -1565,6 +1572,12 @@ pub fn demultiplex(
                 
             out_paired_read_compression_buffer_last[curr_writing_sample] = curr_buffer_end + read_end_pr - header_start_pr + 1;
             
+            if out_paired_read_compression_buffer_last[curr_writing_sample] >= curr_buffer_limit{
+                // remove if it does not happen again!
+                panic!("R1 exceeds the buffer limit! somthing wrong with writing to the buffers!");
+            }
+
+            
             if read_end_pr + whole_paired_read_len >= read_bytes_1 {
                 //println!("R1: {}-{}-{}-{}-{}", read_cntr, whole_paired_read_len, header_start_pr, read_end_pr, read_bytes_1);
                 if read_end_pr < read_bytes_1 - 1 {
@@ -1581,14 +1594,7 @@ pub fn demultiplex(
                 
                 match reader_paired_read{
                     Some(ref mut reader) => {
-                        loop{
-                            curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                            //println!("R1 read: {}  -  {}", read_cntr, curr_bytes);
-                            read_bytes_1 += curr_bytes;
-                            if read_bytes_1 > whole_paired_read_len || curr_bytes == 0{
-                                break;
-                            }
-                        }
+                        read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
                     },
                     None => panic!("expected sinle end input!")
                 };
@@ -1612,15 +1618,7 @@ pub fn demultiplex(
                 panic!("read end should not be greater than the buffer size!");
             }
             
-            loop{
-                curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-                //println!("R2 read: {}  -  {}", read_cntr, curr_bytes);
-            
-                read_bytes_2 += curr_bytes;
-                if read_bytes_2 > whole_read_barcode_len || curr_bytes == 0{
-                    break;
-                }
-            }
+            read_bytes(&mut reader_barcode_read, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
             if read_bytes_2 == 0{
                 if !single_read_input && read_bytes_1 != 0 {
                     panic!("Seems like R1 buffer still have reads! It is expected to hav same read count as R2!")
@@ -2495,7 +2493,7 @@ pub fn post_processing(
     }
             
     info!("The length of the read with barcode is: {}", barcode_read_length);
-    info!("The length of the paired read is: {}", paired_read_length);
+    info!("The length of the paired read is: {}",       paired_read_length);
     
     let mut out_read_barcode_buffer: Vec<u8> = vec![0; reqiured_output_buffer_size];
     let mut out_read_barcode_compression_buffer: Vec<u8> = vec![0; compression_buffer_size];
@@ -2526,7 +2524,6 @@ pub fn post_processing(
     let mut buffer_1 = [0; BUFFER_SIZE];  // paired read
     let mut buffer_2 = [0; BUFFER_SIZE]; // read with barcode
     
-    let mut curr_bytes:usize;
     let mut read_bytes_1: usize = 0;
 
     if !single_read_input{
@@ -2569,6 +2566,8 @@ pub fn post_processing(
     let barcode_bytes: &[u8] = barcode.as_bytes();
     let mut curr_mismatch: usize;
     let mut make_warn = true;
+    let mut extra_comfort_barcode: usize = whole_read_barcode_len + illumina_header_prefix.len() + 25;
+    let mut extra_comfort_paired: usize = whole_paired_read_len + illumina_header_prefix.len() + 25;
     loop {
         //info!("Read: {}", read_cntr);
         read_cntr += 1;
@@ -2594,6 +2593,9 @@ pub fn post_processing(
                 None => { panic!("Something wrong with the input data!");},
                 Some(loc) => {qual_start + loc}
             };
+            whole_read_barcode_len = read_end - header_start;
+            extra_comfort_barcode = whole_read_barcode_len + illumina_header_prefix.len() + 25;
+
         }else{
             seq_start = header_start + header_length_r2;
             plus_start = seq_start + barcode_read_length + 1;
@@ -2627,6 +2629,9 @@ pub fn post_processing(
                     None => { panic!("Something wrong with the input data!");},
                     Some(loc) => {loc + qual_start_pr}
                 };
+                whole_paired_read_len = read_end_pr - header_start_pr;
+                extra_comfort_paired = whole_paired_read_len + illumina_header_prefix.len() + 25;
+
             }else{
                 seq_start_pr = header_start_pr + header_length_r1;
                 plus_start_pr = seq_start_pr + paired_read_length + 1;
@@ -2715,7 +2720,7 @@ pub fn post_processing(
         
         if illumina_format{
 
-            if out_read_barcode_compression_buffer_last + read_end - header_start + illumina_header_prefix.len() >= compression_buffer_size {
+            if out_read_barcode_compression_buffer_last + extra_comfort_barcode >= compression_buffer_size {
                 actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[..out_read_barcode_compression_buffer_last],
                                     &mut out_read_barcode_buffer[out_read_barcode_buffer_last..]).unwrap();
                 out_read_barcode_buffer_last += actual_sz;
@@ -2764,7 +2769,7 @@ pub fn post_processing(
                     
             
             if ! single_read_input{
-                if out_paired_read_compression_buffer_last + read_end_pr - header_start_pr + illumina_header_prefix.len() >= compression_buffer_size{                
+                if out_paired_read_compression_buffer_last + extra_comfort_paired >= compression_buffer_size{                
                     actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[.. out_paired_read_compression_buffer_last], 
                         &mut out_paired_read_buffer[out_paired_read_buffer_last..]).unwrap();
                     out_paired_read_buffer_last += actual_sz;
@@ -2821,9 +2826,7 @@ pub fn post_processing(
                 
                 match reader_paired_read{
                     Some(ref mut reader) => {
-                        curr_bytes = reader.read(&mut buffer_1[read_bytes_1..]).unwrap();
-                        read_bytes_1 += curr_bytes;
-                        
+                        read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);                       
                     },
                     None => panic!("expected sinle end input!")
                 };
@@ -2847,8 +2850,8 @@ pub fn post_processing(
                 // this for testing, if it doies not appear, we can take it off.
                 panic!("read end should not be greater than the buffer size!");
             }
-            curr_bytes = reader_barcode_read.read(&mut buffer_2[read_bytes_2..]).unwrap();
-            read_bytes_2 += curr_bytes;
+            
+            read_bytes(&mut reader_barcode_read, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
             
             if read_bytes_2 == 0{
                 break;
