@@ -323,7 +323,7 @@ fn testing_demultiplex() {
 }
 
 #[test]
-fn testing_extras() {
+fn testing_reformat() {
     for mut ds_itr_tmp in 1..8{
         println!("Testing iteration: {}", ds_itr_tmp);
         let mut expected_itr: i32;
@@ -381,7 +381,7 @@ fn testing_extras() {
         let original_path = format!("testing_data/expected/extras_test/ds{}/", expected_itr);
            
         let command = "target/debug/mgikit";
-        let mut my_args: Vec<String> = vec!["extras".to_string(),
+        let mut my_args: Vec<String> = vec!["reformat".to_string(),
                                                 "-f".to_string(),
                                                 read1_file_path.to_string(), 
                                                 "-r".to_string(), 

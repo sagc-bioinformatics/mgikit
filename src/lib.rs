@@ -2319,7 +2319,7 @@ pub fn merge_qc_reports(qc_report_paths: &[String],
 }
 
 
-pub fn post_processing(
+pub fn reformat(
     r1: &String,
     r2: &String,
     ouput_dir: &String,

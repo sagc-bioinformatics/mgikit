@@ -1,7 +1,7 @@
 ---
 title: Instructions for report functionality
 contributors: [Ziad Al-Bkhetan]
-description: User guide for MGIKIT report functionality including parameters details and usage examples.
+description: User guide for MGIKIT report functionality including parameter details and usage examples.
 toc: true
 type: guides
 ---

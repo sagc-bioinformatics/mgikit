@@ -1,14 +1,14 @@
 ---
 title: Instructions to generate MultQC report from MGIKIT reports.
 contributors: [Ziad Al-Bkhetan]
-description: User guide for to generat html report summariusing the demultipexing results using mgikit output reports.
+description: User guide for generating html report summarising the demultiplexing results using mgikit output reports.
 toc: true
 type: guides
 ---
 
 ## mgikit Reports
 The demultiplex command generates multiple reports with file names that start with the flowcell and lane being demultiplexed.
-a MultiQC hitm report can be generated from these reports using [mgikit-multiqc](https://github.com/sagc-bioinformatics/mgikit-multiqc) plugin as desciribed at the plugin [repository](https://github.com/sagc-bioinformatics/mgikit-multiqc).
+a MultiQC hitm report can be generated from these reports using [mgikit-multiqc](https://github.com/sagc-bioinformatics/mgikit-multiqc) plugin as described at the plugin [repository](https://github.com/sagc-bioinformatics/mgikit-multiqc).
 
 1. `flowcell.L0*.mgikit.info`
 
@@ -47,7 +47,7 @@ This report contains the top 50 frequent barcodes from the above report (6). Thi
 
 The first three reports must be generated for each run. It is unlikely that the fourth and fifth reports will not be generated as usually there should be some undetermined reads in the run. It is highly likely that the sixth and seventh reports will not be generated. If they are generated, it is recommended to make sure that the input sample sheet does not have issues and that the allowed mismatches are less than the minimal Hamming distance between samples.
 
-## Example: Generat MultiQC report from mgikit reports
+## Example: Generate MultiQC report from mgikit reports
 
 In order to generate a [multiqc](https://multiqc.info/) report from mgikit reports, multiqc needs to be installed.
 
