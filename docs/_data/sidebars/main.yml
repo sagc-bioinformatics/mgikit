@@ -7,6 +7,8 @@ subitems:
     url: /template
   - title: Reports
     url: /report
+  - title: Reformat reads
+    url: /reformat
   - title: Contact us
     url: /contact_us
   

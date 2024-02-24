@@ -219,10 +219,11 @@ pub fn parse_sample_index(
                 );
             }
 
-            let mut check_i5 = false;
-            if curr_sample_info[I5_COLUMN] != "." {
-                check_i5 = true;
-            }
+            let check_i5 = if curr_sample_info[I5_COLUMN].len() > 1 {
+                true
+            }else{
+                false
+            };
 
             let i7 = if (template.len() > 0 && i7_rc)
                 || (template.len() == 0 && curr_sample_info[I7_RC_COLUMN] == "1")

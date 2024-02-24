@@ -100,7 +100,7 @@ file naming.
 
 This parameter is used to provide the run id when the parameter `-i` or `--input` is not provided. The parameter is mandatory when Illumina format is requested for read header and file naming.
 
-+ **`--writing-buffer-size`**: The default value is `67108864`. The size of the buffer for each sample to be filled with data then written once to the disk. Smaller buffers will need less memory but makes the tool slower. Largeer buffers need more memory. 
++ **`--writing-buffer-size`**: The default value is `67108864`. The size of the buffer for each sample to be filled with data and then written once to the disk. Smaller buffers will need less memory but make the tool slower. Larger buffers need more memory. 
 
 + **`--comprehensive-scan`**: Enable comperhansive scan. 
 
@@ -127,7 +127,7 @@ the number of allowed mismatches is high.
 
 + **`--info-file`**: The name of the info file that contains the run information. Only needed when using the `--input` parameter. [default: BioInfo.csv]
 
-+ **`--report-level`**: The level of reporting. [default: 2]
++ **`--report-level`**: The level of reporting. 0 no reports will be generated!, 1 data quality and demultiplexing reports. 2: all reports (reports on data quality, demultiplexing, undetermined and ambiguous barcodes).[default: 2]
 
 + **`--compression-level`**: The level of compression (between 0 and 12). 0 is fast but no compression, 12 is slow but high compression. [default: 1]
 
@@ -197,7 +197,7 @@ The run id will be the date and time of the run start ("YMDHmS" format). It will
 
 If the input reads are passed using `-f` and `-r` parameters, mgikit will look for the file `BioInfo.csv` under the same directory as the read with barcodes (R1 for SE or R2 for PE). If found it will be used.
 
-The user can also pass the path of a file formated in teh same way as `BioInfo.csv` file using the parameter `--info-file`. if this path is passed, `instrument` and `run` will be extratced from this file.
+The user can also pass the path of a file formatted in the same way as `BioInfo.csv` file using the parameter `--info-file`. if this path is passed, `instrument` and `run` will be extracted from this file.
 
 `--lane`, `--instrument`, and `--run` will be prioritised over the information in the `BioInfo.csv` file if these parameters were provided.
 
@@ -299,7 +299,7 @@ Templates and indexes forms can be provided by the user, however, the command `t
 ### Reports {#demultipexing-reports-section}
 
 The demultiplex command generates multiple reports with file names that start with the flowcell and lane being demultiplexed.
-a MultiQC hitm report can be generated from these reports using [mgikit-multiqc](https://github.com/sagc-bioinformatics/mgikit-multiqc) plugin as desciribed at the plugin [repository](https://github.com/sagc-bioinformatics/mgikit-multiqc).
+a MultiQC hitm report can be generated from these reports using [mgikit-multiqc](https://github.com/sagc-bioinformatics/mgikit-multiqc) plugin as described at the plugin [repository](https://github.com/sagc-bioinformatics/mgikit-multiqc).
 
 1. `flowcell.L0*.mgikit.info`
 
@@ -340,7 +340,7 @@ The first three reports must be generated for each run. It is unlikely that the 
 
 #### Generat MultiQC report from mgikit reports
 
-In order to generate [multiqc](https://multiqc.info/) report from mgikit reports, multiqc needs to be installed.
+In order to generate a [multiqc](https://multiqc.info/) report from mgikit reports, multiqc needs to be installed.
 
 Here is an example of how to generate the report:
 
@@ -453,14 +453,14 @@ In the case of single-end, the R2 file of the dataset is used alone for demultip
 
 ### Memory utilisation
 
-The default parameters of the tool are optimised to achive high performance. The majority of the memory needed is allocated for output buffering to reduce writing to disk operations.
+The default parameters of the tool are optimised to achieve high performance. The majority of the memory needed is allocated for output buffering to reduce writing-to-disk operations.
 
-The expected memory usage is influnced yb three main factors, 
+The expected memory usage is influenced by three main factors, 
 
 1. Number of samples in the sample sheet.
 2. Writing buffer size (`--writing-buffer-size` parameter, default is `67108864`).
 3. Compression buffer size (`--compression-buffer-size` parameter, default is `131072`).
-4. Single end or paired end input data.
+4. Single-end or paired-end input data.
 
 The expected allocated memory is 
 
@@ -474,7 +474,7 @@ When using the default parameters:
 
 + **Paired-end input**: `2 * number of smaples 64.25 MB`.
 
-Reducing the writing buffer size will reduce the reqiured memory but also affect the performance time.
+Reducing the writing buffer size will reduce the required memory but also affect the performance time.
 
 
 ### Execution examples
