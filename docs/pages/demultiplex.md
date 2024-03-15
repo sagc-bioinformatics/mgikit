@@ -135,6 +135,8 @@ the number of allowed mismatches is high.
 
 + **`--flexible`**: By default, the tool will calulate the length of the first read and its all parts and use this information in the analysis for a quicker determination of the read boundaries. `--flexible` option, will make the tool determine the read boundaries based on the `new line` character (`\n`). 
 
++ **`--ignore-undetermined`**: By default, the tool will stop if many reads were undetermined. using this parameter, will make the tool give a warning one this issue but keep demultiplexing.
+ 
 ### Understanding input files
 
 MGI sequencing machine output a directory for the run (flowcell_id) with a subdirectory for each lane (L01, L02 ..) depending on the machine.

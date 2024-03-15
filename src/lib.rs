@@ -801,7 +801,7 @@ pub fn demultiplex(
     }
     info!("The length of the read with barcode is: {}", barcode_read_length);
     info!("The length of the paired read is: {}", paired_read_length);
-    
+    //println!("ZZLENGTH {}  -  {}", whole_paired_read_len, whole_read_barcode_len);
     
     
     let mut illumina_header_prefix_str = String::new();
@@ -1075,7 +1075,7 @@ pub fn demultiplex(
                 None => { panic!("Something wrong with the input data!");},
                 Some(loc) => {qual_start + loc}
             };
-            whole_read_barcode_len = read_end - header_start;
+            whole_read_barcode_len = 2 * (read_end - header_start + 1);
             extra_comfort_barcode  = whole_read_barcode_len + illumina_header_prefix.len() + barcode_length + 25;
     
             
@@ -1335,6 +1335,7 @@ pub fn demultiplex(
             }
         }
         
+        
 
         if !single_read_input {
             if dynamic_demultiplexing{
@@ -1350,13 +1351,20 @@ pub fn demultiplex(
                     None => { panic!("Something wrong with the input data!");},
                     Some(loc) => {loc + plus_start_pr + 1}
                 };
+                //println!("Z1: {} - {} - {} - {} - {}", header_start_pr, seq_start_pr, plus_start_pr, qual_start_pr, read_bytes_1);
                 read_end_pr = match memchr(b'\n', &buffer_1[qual_start_pr..read_bytes_1]) {
-                    None => { panic!("Something wrong with the input data!");},
+                    None => {
+
+                        println!("{}", unsafe { std::str::from_utf8(&buffer_1[header_start_pr..read_bytes_1]).unwrap()}); 
+                        panic!("Something wrong with the input data!");
+                    },
                     Some(loc) => {loc + qual_start_pr}
                 };
-                whole_paired_read_len = read_end_pr - header_start_pr;
+                
+                whole_paired_read_len = 2* (read_end_pr - header_start_pr + 1);
                 extra_comfort_paired = whole_paired_read_len + illumina_header_prefix.len() + barcode_length + 25;
-    
+                //println!("Z2: {} - {}  - {}  -> {}", header_start_pr, read_end_pr, read_cntr, whole_paired_read_len);
+                //println!("{}", unsafe { std::str::from_utf8(&buffer_1[header_start_pr..read_end_pr + 1]).unwrap()}); 
 
             }else{
                 seq_start_pr = header_start_pr + header_length_r1;
@@ -2568,6 +2576,7 @@ pub fn reformat(
     let mut make_warn = true;
     let mut extra_comfort_barcode: usize = whole_read_barcode_len + illumina_header_prefix.len() + 25;
     let mut extra_comfort_paired: usize = whole_paired_read_len + illumina_header_prefix.len() + 25;
+
     loop {
         //info!("Read: {}", read_cntr);
         read_cntr += 1;
@@ -2593,7 +2602,7 @@ pub fn reformat(
                 None => { panic!("Something wrong with the input data!");},
                 Some(loc) => {qual_start + loc}
             };
-            whole_read_barcode_len = read_end - header_start;
+            whole_read_barcode_len = 2 * (read_end - header_start + 1);
             extra_comfort_barcode = whole_read_barcode_len + illumina_header_prefix.len() + 25;
 
         }else{
@@ -2629,7 +2638,7 @@ pub fn reformat(
                     None => { panic!("Something wrong with the input data!");},
                     Some(loc) => {loc + qual_start_pr}
                 };
-                whole_paired_read_len = read_end_pr - header_start_pr;
+                whole_paired_read_len = 2 * (read_end_pr - header_start_pr + 1);
                 extra_comfort_paired = whole_paired_read_len + illumina_header_prefix.len() + 25;
 
             }else{
