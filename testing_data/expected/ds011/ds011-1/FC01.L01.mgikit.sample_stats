@@ -1,0 +1,6 @@
+job_number	sample_id	r1_qc_30	r2_qc_30	r3_qc_30	r1_bases	r2_bases	r3_bases	r1_qc	r2_qc	r3_qc	all_reads	0-mismatches	1-mismatches	2-mismatches
+.	Sample01	50	117	48	150	150	48	2070	4212	1600	3	1	2	0
+.	Sample02	50	0	0	50	50	16	1700	1300	416	1	1	0	0
+.	Sample03	0	200	64	200	200	64	5600	6800	2176	4	4	0	0
+.	Sample04	167	0	0	200	200	64	6162	5600	1792	4	4	0	0
+.	Undetermined	250	200	64	400	400	128	12900	10520	3648	8	8	0	0
