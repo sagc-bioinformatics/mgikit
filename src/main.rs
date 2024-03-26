@@ -270,8 +270,20 @@ fn main() {
                         .default_value("")
                         .help("Path to the output log, instead of writing to the stdout.")
                 )
-                
-                
+                .arg(
+                    Arg::new("arg_all_index_error")
+                        .long("all-index-error")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("By default, the allowed mismatches `-m or --mismatches` are considered to be per index. This flag will make it for the total mismatches across all indices.")
+                )
+                .arg(
+                    Arg::new("arg_memory")
+                        .long("memory")
+                        .default_value("0")
+                        .value_parser(clap::value_parser!(f64))
+                        .help("The requested maximum memory to be used (in giga byte). Check the documentation for memory optimisation options. Default is 0 then the tool will use the available memory on the machine.")
+                )  
         )
         .subcommand(
             Command::new("template")
@@ -552,6 +564,8 @@ fn main() {
                 let arg_dynamic:  &bool = demultiplex_command.get_one::<bool>("arg_dynamic").unwrap();
                 let arg_compression_buffer_size:  &usize = demultiplex_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
                 let arg_ignore_undetermined:  &bool = demultiplex_command.get_one::<bool>("arg_ignore_undetermined").unwrap();
+                let arg_all_index_error:  &bool = demultiplex_command.get_one::<bool>("arg_all_index_error").unwrap();
+                let arg_memory: &f64 = demultiplex_command.get_one::<f64>("arg_memory").unwrap();
                 
                 match demultiplex(
                     arg_input_folder_path,
@@ -582,7 +596,9 @@ fn main() {
                     *arg_compression_level,
                     *arg_dynamic,
                     *arg_compression_buffer_size,
-                    *arg_ignore_undetermined
+                    *arg_ignore_undetermined,
+                    *arg_all_index_error,
+                    *arg_memory
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),

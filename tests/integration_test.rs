@@ -159,7 +159,7 @@ fn testing_template() {
 
 #[test]
 fn testing_demultiplex() {
-    for ds_itr_tmp in 1..11{
+    for ds_itr_tmp in 1..15{
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
             6 => 1,
@@ -167,16 +167,24 @@ fn testing_demultiplex() {
             7 => 1,
             4 => 3,
             5 => {disable_illumina_format = true; 1},
+            11 => 1,
+            12 => 2,
+            14 => 2,
             _ => ds_itr_tmp
         };
 
         let ds_itr_ex = match ds_itr_tmp{
             6 => 1,
+            14 => 12,
             _ => ds_itr_tmp
         };
 
         let ds_itr_fc = match ds_itr_in{
             10 => 1,
+            11 => 1,
+            12 => 1,
+            13 => 2,
+            14 => 2,
             _ => ds_itr_in
         };
 
@@ -203,6 +211,7 @@ fn testing_demultiplex() {
         }
     
         for allowed_mismatches in 0..5 {
+            
             let ouput_dir = format!("testing_data/output/ds0{}/out_real-{}/", ds_itr_tmp, allowed_mismatches);
             let original_path = format!("testing_data/expected/ds0{}/ds0{}-{}/", ds_itr_ex, ds_itr_ex, allowed_mismatches);
            
@@ -229,20 +238,25 @@ fn testing_demultiplex() {
                                                 "-m".to_string(), 
                                                 format!("{}", allowed_mismatches), 
                                                 "--force".to_string()];
-            
-            
+                        
             if comprehensive_scan{
                 my_args.push("--comprehensive-scan".to_string());
             }
             if disable_illumina_format{
                 my_args.push("--disable-illumina".to_string());
             }
-            if ds_itr_tmp ==  9{
+            if ds_itr_tmp ==  9 {
                 my_args.push("--template".to_string());
                 my_args.push("i78:--8".to_string());
                 
             }
-            
+
+            if ds_itr_tmp <  11{
+                my_args.push("--all-index-error".to_string());                
+            }
+            if ds_itr_tmp ==  14{
+                my_args.push("--flexible".to_string());                
+            }
             println!("{:?}", vec!["demultiplex".to_string(),
             "-f".to_string(),
             read1_file_path.to_string(), 
@@ -314,6 +328,9 @@ fn testing_demultiplex() {
                        count_files_recursive(&original_path));
 
             if [7, 8, 9, 10].contains(&ds_itr_tmp){
+                break;
+            }
+            if ds_itr_tmp > 10 && allowed_mismatches == 2{
                 break;
             }
             
