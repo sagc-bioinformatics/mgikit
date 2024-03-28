@@ -333,8 +333,8 @@ fn create_output_file_name(sample_name: &String, lane: &String, sample_index: us
         }
     }else
     {
-        //return (format!("{}_{}_R1.fastq.gz", sample_name, lane), format!("{}_{}_R2.fastq.gz", sample_name, lane));
-        return (format!("{}_R1.fastq.gz", sample_name), format!("{}_R2.fastq.gz", sample_name));
+        return (format!("{}_{}_R1.fastq.gz", sample_name, lane), format!("{}_{}_R2.fastq.gz", sample_name, lane));
+        //return (format!("{}_R1.fastq.gz", sample_name), format!("{}_R2.fastq.gz", sample_name));
     }    
 }
 
@@ -348,7 +348,7 @@ fn get_reader(input_file:&PathBuf) -> Box< dyn Read>{
     reader
 }
 
-fn get_flowcell_info(mgi_header:&String) ->(String, usize){
+fn get_flowcell_lane_info(mgi_header:&String) ->(String, usize, String){
     let mut l_position = mgi_header.len() - 1;
     for header_chr in mgi_header.chars().rev() {
         if header_chr == 'L' {
@@ -362,9 +362,10 @@ fn get_flowcell_info(mgi_header:&String) ->(String, usize){
         panic!("Can not find the flowcell id in this header {}!", mgi_header);
     }
     let flowcell = mgi_header[1..l_position].to_string();
+    let lane = mgi_header[l_position + 1..l_position + 2].to_string();
 
     info!("Detected flowcell from the header of the first read is {}.", flowcell);
-    (flowcell, l_position)
+    (flowcell, l_position, lane)
 }
 
 fn parse_sb_file_name(file_name: &String) -> (String, String, String, String){
@@ -681,7 +682,8 @@ pub fn demultiplex(
     compression_buffer_size: usize,
     ignore_undetermined:bool,
     all_index_error:bool,
-    memory:f64
+    memory:f64,
+    not_mgi:bool
 ) -> Result<(), Box<dyn Error>> {
     
     // Validate and prepare input data and parameters.
@@ -690,10 +692,13 @@ pub fn demultiplex(
 
     let (paired_read_file_path_final, read_barcode_file_path_final, single_read_input) = 
     if input_folder_path.len() > 0{
+        info!("Input directory: {}", input_folder_path);
         get_read_files_from_input_dir(input_folder_path, read1_file_name_suf, read2_file_name_suf)
     }else{
         validate_and_assigne_input_reads(read1_file_path, read2_file_path)
     };
+    
+    info!("MGI input fastq files:  {}", !not_mgi);
 
     let (mut instrument, mut run) = 
                 parse_info_file(
@@ -711,7 +716,7 @@ pub fn demultiplex(
         run = arg_run.clone();
     }
     
-    let lane: String = match arg_lane.len() > 0{
+    let mut lane: String = match arg_lane.len() > 0{
         true => arg_lane.clone(),
         false => get_lane_from_file(&read_barcode_file_path_final , 1, '_')
     };
@@ -723,16 +728,29 @@ pub fn demultiplex(
         panic!("Sample sheet file is invalid!");
     }
     check_file(sample_sheet_file_path);
-
-
+    
+    // Printing analysis information
+    
     info!("Output directory: {}", output_directory.display());
     info!("Reports directory: {}", report_directory.display());
-    info!("Instrumnet: {}", instrument);
-    info!("Run: {}", run);
-    info!("Lane: {}", lane);
-    info!("Comprehensive scan mood: {}", comprehensive_scan);
+    
+    info!("Comprehensive scan mode: {}", comprehensive_scan);
     info!("Dynamic read determination: {}.", dynamic_demultiplexing);
-    info!("Compression level: {}. (0 no compression but fast, 12 best compression but slow.)", compression_level);
+    info!("Allowed mismatches when finding the index are: {}", allowed_mismatches);
+    
+    if all_index_error{
+        info!(
+            "The allowed mismatches will be compared to the total mismatches for all indicies combined."
+        );
+    }else{
+        info!(
+            "The allowed mismatches will be considered per index."
+        );
+    }
+    if allowed_mismatches > 2{
+        warn!("It is not recommended to allow more than 2 mismatches per index! This might decrease the accuracy of the demultipexing!");
+    }
+
     info!("Trim Barcode: {}", trim_barcode);
     // writing_threshold: usize, read_merging_threshold
     let writing_buffer_size: usize;
@@ -752,39 +770,27 @@ pub fn demultiplex(
     if compression_buffer_size > writing_buffer_size{
         panic!("Compression buffer size '--compression-buffer-size' should be less than Writing buffer size ('--writing-buffer-size').");
     }
-    info!(
-        "Reads that match with multiple samples will be saved in ambiguous_read1/2.fastq file"
-    );
-    info!("The paired read files are assumed to contain the paired reads in the same order!");
-    info!(
-        "Allowed mismatches when finding the index are: {}",
-        allowed_mismatches
-    );
-    if all_index_error{
-        info!(
-            "The allowed mismatches will be compared to the total mismatches for all indicies combined."
-        );
-    }else{
-        info!(
-            "The allowed mismatches will be consdered per index."
-        );
-    }
+    info!("Compression level: {}. (0 no compression but fast, 12 best compression but slow.)", compression_level);
+    
     //let per_index_mismatch = if all_index_error 
     
-    if allowed_mismatches > 2{
-        warn!("It is not recommended to allow more than 2 mismatches per index! This might decrease the accuracy of the demultipexing!");
-    }
-
+    
     let trim_barcode = !keep_barcode;
     let illumina_format = !disable_illumina_format;
     if 0.0 < memory && memory <= 0.5{
         panic!("Requested memory should be greater than 0.5 GB!")
     }
-
     
+    info!(
+        "Reads that match with multiple samples will be saved in ambiguous_read1/2.fastq file"
+    );
+    info!("The paired read files are assumed to contain the paired reads in the same order!");
     
+    if illumina_format && not_mgi{
+        panic!("mgikit does not refomat output files in Illumina foramt unless the input fastq files are in MGI format! Disable `--not-mgi` or enable `--disable-illumina-format`");
+    }
+   
     //  Get reads information 
-
     let mut whole_read_barcode_len: usize ;
     let mut whole_paired_read_len: usize = 0;
     let barcode_read_length: usize;
@@ -794,48 +800,48 @@ pub fn demultiplex(
     let header_length_r2:usize;
     let mut header_length_r1: usize = 0;   
     let flowcell:String;
+    let header_lane:String;
     let l_position: usize;
     let only_plus_r2: bool;
     
-    {
-        let mut reader_barcode_read_tmp = get_buf_reader(&read_barcode_file_path_final); 
-        let (header, seq, plus, quality) = get_read_parts(&mut reader_barcode_read_tmp);
-        
-        whole_read_barcode_len = header.len() + seq.len() + plus.len() + quality.len();
-        header_length_r2 = header.len();
-        (flowcell, l_position) = get_flowcell_info(&header);    
+    let mut reader_barcode_read_tmp = get_buf_reader(&read_barcode_file_path_final); 
+    let (header, seq, plus, quality) = get_read_parts(&mut reader_barcode_read_tmp);
+    
+    whole_read_barcode_len = header.len() + seq.len() + plus.len() + quality.len();
+    header_length_r2 = header.len();
+    if not_mgi{
+        flowcell = Local::now().format("%Y%m%dT%H%M%S").to_string();
+        l_position = 0;
+    }else{
+        (flowcell, l_position, header_lane) = get_flowcell_lane_info(&header);
         info!("Detected flowcell from the header of the first read is {}.", flowcell);
-        
-        barcode_read_length = seq.chars().count() - 1;
-        only_plus_r2 = plus == "+\n";
-        if ! only_plus_r2 && ! dynamic_demultiplexing{
-            panic!("Expected read format is not satisified. You can try rerunning using --flexible parameter.");
+        info!("Detected lane from the header of the first read is {}.", header_lane);
+        if "1234".contains(&header_lane) {
+            warn!("The detected lane ( = {}) is not recognised! Expected 1, 2, 3 or 4!", header_lane);
         }
-
-        
-        if !single_read_input {
-            let mut reader_paired_read_buff = get_buf_reader(&paired_read_file_path_final);
-            let (header, seq, plus, quality) = get_read_parts(&mut reader_paired_read_buff);
-            whole_paired_read_len = header.len() + seq.len() + plus.len() + quality.len();
-            header_length_r1 = header.len();
-            paired_read_length = seq.chars().count() - 1;
-            only_plus_r1 = plus == "+\n";
-            if ! only_plus_r1{
-                panic!("Expected read format is not satisified. You can try running --flexible command.");
+        if lane.len() == 0 {
+            lane = format!("L0{}", header_lane);
+        }else{
+            if lane != format!("L0{}", header_lane){
+                warn!("The lane in the read header (L0{}) does not match with the lane provided or extracted from the input file name {}!", header_lane, lane);
             }
         }
+    }
+
+    if lane.len() == 0{
         
     }
-    info!("The length of the read with barcode is: {}", barcode_read_length);
-    info!("The length of the paired read is: {}", paired_read_length);
-    //println!("ZZLENGTH {}  -  {}", whole_paired_read_len, whole_read_barcode_len);
     
+
     
     let mut illumina_header_prefix_str = String::new();
     let mut illumina_header_prefix = illumina_header_prefix_str.as_bytes();
 
     if illumina_format {
         info!("Read header and Output files: Illumina format.");
+        info!("Instrumnet: {}", instrument);
+        info!("Run: {}", run);
+        info!("Lane: {}", lane);
         if lane.len() == 0 || instrument.len() == 0 || run.len() == 0 {
             panic!("Instrument id and run number are required for QC reports and when Illumina format is requested!")
         }
@@ -844,10 +850,39 @@ pub fn demultiplex(
          
     }else {
         info!("Read header and Output files: MGI format.");
+        info!("Lane: {}", lane);
         if lane.len() == 0 {
             panic!("Lane number is required for QC reports!")
         }
     }
+    
+
+
+    barcode_read_length = seq.chars().count() - 1;
+    only_plus_r2 = plus == "+\n";
+
+    if ! only_plus_r2 && ! dynamic_demultiplexing{
+        panic!("Expected read format is not satisified. You can try rerunning using --flexible parameter.");
+    }
+
+    if !single_read_input {
+        let mut reader_paired_read_buff = get_buf_reader(&paired_read_file_path_final);
+        let (header, seq, plus, quality) = get_read_parts(&mut reader_paired_read_buff);
+        whole_paired_read_len = header.len() + seq.len() + plus.len() + quality.len();
+        header_length_r1 = header.len();
+        paired_read_length = seq.chars().count() - 1;
+        only_plus_r1 = plus == "+\n";
+        if ! only_plus_r1{
+            panic!("Expected read format is not satisified. You can try running --flexible command.");
+        }
+    }
+        
+    info!("The length of the read with barcode is: {}", barcode_read_length);
+    info!("The length of the paired read is: {}", paired_read_length);
+    //println!("ZZLENGTH {}  -  {}", whole_paired_read_len, whole_read_barcode_len);
+    
+
+       
     
     
     // parse sample/index file and get all mismatches
@@ -2516,7 +2551,7 @@ pub fn reformat(
     whole_read_barcode_len += tmp_str.len();
     header_length_r2 = tmp_str.len();
 
-    let (flowcell, l_position) = get_flowcell_info(&tmp_str);        
+    let (flowcell, l_position, _) = get_flowcell_lane_info(&tmp_str);        
     if sb_flowcell != flowcell{
         warn!("The flowcell extracted from the file name ({}) is not the same as the flowcell extracted from the rewad header ({})", sb_flowcell, flowcell);
     }

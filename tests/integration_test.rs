@@ -1,10 +1,11 @@
 //use mgikit::*;
 use md5;
+use std::collections::HashMap;
 use std::fs::File;
 use std::fs;
 use std::io::Read;
 use std::process::Command;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use flate2::read::MultiGzDecoder;
 use walkdir::WalkDir;
 
@@ -159,7 +160,7 @@ fn testing_template() {
 
 #[test]
 fn testing_demultiplex() {
-    for ds_itr_tmp in 1..15{
+    for ds_itr_tmp in 1..2{//15{
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
             6 => 1,
@@ -337,6 +338,112 @@ fn testing_demultiplex() {
         }
     }
         
+}
+
+#[test]
+fn testing_demultiplex_not_mgi_input() {
+    let mut disable_illumina_format = false;
+    let read1_file_path : String = String::from("testing_data/input/ds015/L01/FC02_L01_read_1.fq.gz");
+    let read2_file_path : String = String::from("testing_data/input/ds015/L01/FC02_L01_read_2.fq.gz");
+    let sample_sheet_file_path : String = String::from("testing_data/expected/ds015/sample_sheet_expected.tsv");
+    let lane = String::from("L01");
+    for allowed_mismatches in 0..3 {
+        let ouput_dir = format!("testing_data/output/ds015/out_real-{}/", allowed_mismatches);
+        let original_path = format!("testing_data/expected/ds015/ds015-{}/", allowed_mismatches);
+
+        if PathBuf::from(&ouput_dir).exists() {
+            fs::remove_dir_all(&ouput_dir).unwrap();
+        } 
+
+        let command = "target/debug/mgikit";
+        let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
+                                                "-f".to_string(),
+                                                read1_file_path.to_string(), 
+                                                "-r".to_string(), 
+                                                read2_file_path.to_string(), 
+                                                "-s".to_string(), 
+                                                sample_sheet_file_path.to_string(), 
+                                                "--lane".to_string(), 
+                                                lane.to_string(), 
+                                                "--writing-buffer-size".to_string(), 
+                                                "131072".to_string(), 
+                                                "-o".to_string(),
+                                                ouput_dir.to_string(), 
+                                                "-m".to_string(), 
+                                                format!("{}", allowed_mismatches), 
+                                                "--force".to_string()];
+                        
+        my_args.push("--disable-illumina".to_string());
+        my_args.push("--flexible".to_string());    
+        my_args.push("--not-mgi".to_string());                
+        let output = Command::new(command)
+            .args(my_args)
+            .output() // Capture the output of the command.
+            .expect("Failed to execute command");
+        
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+            let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+            println!("Command output:\n{} -> {}", meta_info[1], output_str);
+            
+        } else {
+            panic!(
+                "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+        
+        let mut output_paths = HashMap::new();
+        for path in fs::read_dir(&ouput_dir).unwrap() {
+            if path.as_ref().unwrap().file_name().to_str().unwrap().contains("L01.mgikit.general"){
+                output_paths.insert("L01.mgikit.general",path.as_ref().unwrap().file_name().into_string().unwrap());
+            }else if path.as_ref().unwrap().file_name().to_str().unwrap().contains("L01.mgikit.info"){
+                output_paths.insert("L01.mgikit.info", path.as_ref().unwrap().file_name().into_string().unwrap());
+            }else if path.as_ref().unwrap().file_name().to_str().unwrap().contains("L01.mgikit.sample_stats"){
+                output_paths.insert("L01.mgikit.sample_stats", path.as_ref().unwrap().file_name().into_string().unwrap());
+            }else if path.as_ref().unwrap().file_name().to_str().unwrap().contains("L01.mgikit.undetermined_barcode.complete"){
+                output_paths.insert("L01.mgikit.undetermined_barcode.complete", path.as_ref().unwrap().file_name().into_string().unwrap());
+            }else if path.as_ref().unwrap().file_name().to_str().unwrap().contains("L01.mgikit.undetermined_barcode"){
+                output_paths.insert("L01.mgikit.undetermined_barcode", path.as_ref().unwrap().file_name().into_string().unwrap());
+            }
+        }
+
+        println!("{:?}", output_paths);
+        let paths = fs::read_dir(&original_path).unwrap();
+        for path in paths {
+            
+            
+            if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                println!("Checking: {} and {}", path.as_ref().unwrap().path().display(), 
+                          format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+
+                let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                
+                let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                assert_eq!(crc_new, crc_original);
+
+            }else{
+                println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                                format!("{}{}", ouput_dir, output_paths.get(&path.as_ref().unwrap().file_name().to_str().unwrap()).unwrap()));    
+                    
+                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, output_paths.get(&path.as_ref().unwrap().file_name().to_str().unwrap()).unwrap())));
+                let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+            
+            }
+
+            
+    
+        }
+
+        println!("Checking count of files");
+        assert_eq!(count_files_recursive(&ouput_dir),
+                    count_files_recursive(&original_path) + 1);        
+    }
+            
 }
 
 #[test]

@@ -141,7 +141,9 @@ the number of allowed mismatches is high.
 
 + **`--memory`**: The requested maximum memory to be used (in giga byte). Check the documentation for memory optimisation options. Default is 0 then the tool will use the available memory on the machine.
 
-        
++ **`--not-mgi`**: This flag needs to be enabled if the input fastq files don't have MGI format.
+
+
 ### Understanding input files
 
 MGI sequencing machine output a directory for the run (flowcell_id) with a subdirectory for each lane (L01, L02 ..) depending on the machine.
@@ -471,9 +473,9 @@ The expected memory usage is influenced by three main factors,
 
 The expected allocated memory is 
 
-+ **Single-end input**: `number of smaples * (writing buffer size + 2 * compression buffer size)`.
++ **Single-end input**: `number of samples * (writing buffer size + 2 * compression buffer size)`.
 
-+ **Paired-end input**: `2 * number of smaples * (writing buffer size + 2 * compression buffer size)`.
++ **Paired-end input**: `2 * number of samples * (writing buffer size + 2 * compression buffer size)`.
 
 When using the default parameters:
 
@@ -483,6 +485,10 @@ When using the default parameters:
 
 Reducing the writing buffer size will reduce the required memory but also affect the performance time.
 
+
+### Testing datasets
+
+We have attached a simple python script to generate paired-end fastq files. The script is available under [`mgikit/testing_data/generate_fastq/`](https://github.com/sagc-bioinformatics/mgikit/tree/main/testing_data/generate_fastq). You can use this script to generate large fastq files with random content for testing as described in the readme file under the directory.
 
 ### Execution examples
 
