@@ -9,7 +9,6 @@ keywords = ["fastq", "MGI", "demultiplexing"]
 
 [dependencies]
 flate2 = { version = "1.0.28", features = ["zlib-ng-compat"], default-features = false }
-#gzp = { version = "0.11.3", default-features = false, features = ["deflate_zlib_ng"] }
 libz-sys = { version = "1.1.8", default-features = false, features = ["libc"] }
 mimalloc = { version = "0.1.34", default-features = false }
 combinations = "*"
@@ -17,7 +16,6 @@ itertools = "*"
 chrono = "0.4"
 termion = "2.0.1"
 clap = "4.3.21"
-noodles-bgzf = "0.26.0"
 memchr = "2.6.4"
 libdeflater = "1.12.0"
 niffler = { version = "2.5.0", default-features = false, features = ["gz"]}

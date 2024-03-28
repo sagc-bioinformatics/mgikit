@@ -1,3 +1,35 @@
+# Generate fastq files
+The script `generate_fastq.py` generates large fastq files with a specific length and attaches a barcode to them for specific indices allowing few mismatches in the barcode.
+
+## Parameters
+
+ + **`-o or --output-file`**: Path and prefix of the of the output FASTQ files.
+
++ **`-n or --num-sequences`**:  Number of reads to generate (default: 1000)
+
++ **`-l or --sequence-length`**: Length of each sequence (default: 100)
+
++ **`--i7`**: i7 sequence (6 to 12 bases).
+
++ **`--i5`**: i5 sequence (6 to 12 bases).
+
++ **`--umi-len`**: UMI length should be less than 13 bases (default: 0).
+
++ **`--allowed-mismatches`**: Allowed mismatches, should be in [0, 1, 2]. (default: 0)
+
+## Example
+
+```
+python3 testing_data/generate_fastq/generate_fastq.py \
+    -o DS01 \
+    -n 20 \
+    -l 50 \
+    --i7 AAAAAAAA \
+    --i5 GGGGGGGG \
+    --allowed-mismatches 1
+```
+You can create multiple samples and then merge them together using `cat` command.
+
 # Generate DS03 dataset
 Run the following command
 ```

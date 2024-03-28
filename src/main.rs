@@ -283,7 +283,14 @@ fn main() {
                         .default_value("0")
                         .value_parser(clap::value_parser!(f64))
                         .help("The requested maximum memory to be used (in giga byte). Check the documentation for memory optimisation options. Default is 0 then the tool will use the available memory on the machine.")
-                )  
+                )
+                .arg(
+                    Arg::new("arg_not_mgi")
+                        .long("not-mgi")
+                        .action(ArgAction::SetTrue)
+                        .default_value("false")
+                        .help("This flag needs to be enabled if the input fastq files don't have MGI format.")
+                    ) 
         )
         .subcommand(
             Command::new("template")
@@ -519,9 +526,7 @@ fn main() {
                         .default_value("")
                         .help("The barcode of the specific sample to calulate the mismatches for the reports. If not provided, no mismtahces will be calculated.")
                 )  
-                
-                
-                               
+                                               
         )
         .get_matches();
         
@@ -566,7 +571,7 @@ fn main() {
                 let arg_ignore_undetermined:  &bool = demultiplex_command.get_one::<bool>("arg_ignore_undetermined").unwrap();
                 let arg_all_index_error:  &bool = demultiplex_command.get_one::<bool>("arg_all_index_error").unwrap();
                 let arg_memory: &f64 = demultiplex_command.get_one::<f64>("arg_memory").unwrap();
-                
+                let arg_not_mgi: &bool = demultiplex_command.get_one::<bool>("arg_not_mgi").unwrap();
                 match demultiplex(
                     arg_input_folder_path,
                     &mut arg_read1_file_path,
@@ -598,7 +603,8 @@ fn main() {
                     *arg_compression_buffer_size,
                     *arg_ignore_undetermined,
                     *arg_all_index_error,
-                    *arg_memory
+                    *arg_memory,
+                    *arg_not_mgi
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),
