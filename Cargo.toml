@@ -24,6 +24,7 @@ glob = "0.3.1"
 log = "0.4"
 env_logger = "0.10.1"
 sysinfo = "0.24.0"
+fastq = "0.6.0"
 
 [dev-dependencies]
 md5 = "0.7.0"

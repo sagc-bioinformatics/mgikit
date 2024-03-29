@@ -160,7 +160,7 @@ fn testing_template() {
 
 #[test]
 fn testing_demultiplex() {
-    for ds_itr_tmp in 1..2{//15{
+    for ds_itr_tmp in 1..15{
         let mut disable_illumina_format = false;
         let ds_itr_in = match ds_itr_tmp{
             6 => 1,

@@ -34,6 +34,8 @@ use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
 
+mod thread_reader;
+use crate::thread_reader::*;
 
 
 const BUFFER_SIZE: usize = 1 << 19;
@@ -629,7 +631,7 @@ fn get_read_parts(reader: &mut dyn BufRead) -> (String, String, String, String){
     (header, seq, info, quality)
 }
 
-fn read_bytes(reader: &mut Box< dyn Read>, buffer: &mut[u8], minimum:usize, last_byte: &mut usize){
+fn read_bytes<R: Read>(reader: &mut R, buffer: &mut[u8], minimum:usize, last_byte: &mut usize){
     let mut curr_bytes: usize;
     loop{
         curr_bytes = reader.read(&mut buffer[*last_byte..]).unwrap();
@@ -1105,9 +1107,12 @@ pub fn demultiplex(
     let start = Instant::now();
     let dur;
     
-    
+    let bufsize: usize = 1 << 22;
+    let queuelen: usize = 2;
 
-    let mut reader_barcode_read = get_reader(&read_barcode_file_path_final); 
+    let mut reader_barcode_read_tmp = flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()); 
+    let mut reader_barcode_read = thread_reader::ThreadReader::new(reader_barcode_read_tmp, bufsize, queuelen);
+    
     let mut reader_paired_read = if !single_read_input {
         let r1 = get_reader(&paired_read_file_path_final);
         Some(r1)
@@ -1753,6 +1758,20 @@ pub fn demultiplex(
         
     }
 
+    
+    
+    
+    let handle = reader_barcode_read.handle_take().unwrap();
+    ::std::mem::drop(reader_barcode_read);
+    match handle.join() {
+        Ok(_) => println!("Done!"),
+        Err(e) => panic!("Error"),
+    };
+    
+    
+    
+    
+    
     let max_mismatches = if all_index_error {allowed_mismatches + 1} else {allowed_mismatches * 2 + 1};
     
     
