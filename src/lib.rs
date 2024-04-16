@@ -23,6 +23,9 @@ use std::path::PathBuf;
 use log::{info, warn};
 use sysinfo::{System, SystemExt};
 
+use std::thread;
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use rayon::{ThreadPoolBuilder, ThreadPool};
 
 // my modules
 mod variables;
@@ -33,9 +36,6 @@ mod sequence_utils;
 use crate::sequence_utils::*;
 mod index_dic;
 use crate::index_dic::*;
-
-mod thread_reader;
-use crate::thread_reader::*;
 
 
 const BUFFER_SIZE: usize = 1 << 19;
@@ -685,7 +685,8 @@ pub fn demultiplex(
     ignore_undetermined:bool,
     all_index_error:bool,
     memory:f64,
-    not_mgi:bool
+    not_mgi:bool,
+    requested_threads: usize,
 ) -> Result<(), Box<dyn Error>> {
     
     // Validate and prepare input data and parameters.
@@ -709,7 +710,6 @@ pub fn demultiplex(
                                             &read_barcode_file_path_final
                                             )
                                 );
-    
     
     if arg_instrument.len() > 0{
         instrument = arg_instrument.clone();
@@ -782,7 +782,14 @@ pub fn demultiplex(
     if 0.0 < memory && memory <= 0.5{
         panic!("Requested memory should be greater than 0.5 GB!")
     }
-    
+
+    let available_cpus = num_cpus::get();
+
+    let used_cpus = if requested_threads == 0 || requested_threads > available_cpus { available_cpus } else { requested_threads };
+    info!("Available CPUs: {}. Requested CPUs {}. Used CPUs: {}.", available_cpus, requested_threads, used_cpus);
+    if requested_threads > available_cpus{
+        warn!("Used CPUs are redueced to the available CPUs as the requested number is not available.");    
+    }
     info!(
         "Reads that match with multiple samples will be saved in ambiguous_read1/2.fastq file"
     );
@@ -940,7 +947,7 @@ pub fn demultiplex(
     let mut system = System::new_all();
     system.refresh_memory(); 
     let sys_memory = (system.available_memory() * 1000) as f64;
-    info!("Available memory is {} bytes", sys_memory);
+    info!("Available memory is {} KB", sys_memory / 1000.0);
     
     if sys_memory <= 500_000_000.0 {
         panic!("Available memory should be greater than 0.5 GB!")
@@ -977,16 +984,23 @@ pub fn demultiplex(
             panic!("There is no enough memory available to run this analysis. Please check the documenation on how to optimise buffers for better memory utilisation");
         }
     }
-    
+
+
+
+    let buffer_size: usize = BUFFER_SIZE;
+    let queuelen: usize = 5;
+    //let used_cpus:usize = 2;
+
+    let thread_reader:bool = used_cpus > 2;
+    let thread_writer:bool = used_cpus > 1;
+        
     let mut compressor = Compressor::new(CompressionLvl::new(compression_level as i32).unwrap());
     let reqiured_output_buffer_size = final_writing_buffer_size + compressor.gzip_compress_bound(compression_buffer_size);
     
-
     let barcode_read_actual_length = (barcode_read_length - barcode_length) as u64;
     let paired_read_length_64 = paired_read_length as u64;
     let barcode_length_u64 = barcode_length as u64;
     let mut extract_umi;
-
     
     let mut sample_mismatches: Vec<Vec<u64>> = Vec::new();
     let mut sample_statistics: Vec<Vec<u64>> = Vec::new();
@@ -1006,6 +1020,9 @@ pub fn demultiplex(
     let mut extra_comfort_barcode: usize = whole_read_barcode_len + illumina_header_prefix.len() + barcode_length + 25;
     let mut extra_comfort_paired: usize = whole_paired_read_len + illumina_header_prefix.len() + barcode_length + 25;
     
+    let mut extra_comfort_reading_barcode: usize = whole_read_barcode_len * 2;
+    let mut extra_comfort_reading_paired: usize = whole_paired_read_len * 2;
+    
 
     
     let mut output_barcode_file_paths: Vec<Option<PathBuf>> = Vec::new();
@@ -1013,7 +1030,7 @@ pub fn demultiplex(
     let mut output_file_r1: String;
     let mut output_file_r2: String;
 
-    for i in 0..sample_information.len(){
+    for i in 0..total_samples{
         sample_mismatches.push(vec![0; 2 * allowed_mismatches + 2]);
 
         if writing_samples[i] == i {
@@ -1048,28 +1065,27 @@ pub fn demultiplex(
             output_barcode_file_paths.push(None);
             output_paired_file_paths.push(None);
         }
-        
-        
+                
         sample_statistics.push(vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-        if read2_has_sequence || i >= undetermined_label_id{
+        if !thread_writer && (read2_has_sequence || i >= undetermined_label_id){
             out_read_barcode_buffer.push(vec![0; reqiured_output_buffer_size]);
             
         }else{
             out_read_barcode_buffer.push(vec![]);
         }
         
-        out_read_barcode_compression_buffer_last[i] = i * compression_buffer_size;
-        if ! single_read_input{
+        out_read_barcode_compression_buffer_last[i] = 0;
+        if ! single_read_input && ! thread_writer{
             out_paired_read_buffer.push( vec![0; reqiured_output_buffer_size]);            
-            out_paired_read_compression_buffer_last[i] = i * compression_buffer_size;
+            out_paired_read_compression_buffer_last[i] = 0;
         }
     }
 
-    let mut out_read_barcode_compression_buffer: Vec<u8> = vec![0; compression_buffer_size * total_samples];
+    let mut out_read_barcode_compression_buffer: Vec<Vec<u8>> = vec![vec![0; compression_buffer_size]; total_samples];
 
-    let mut out_paired_read_compression_buffer = if ! single_read_input{
-        vec![0; compression_buffer_size * total_samples]
+    let mut out_paired_read_compression_buffer: Vec<Vec<u8>> = if ! single_read_input{
+        vec![vec![0; compression_buffer_size]; total_samples]
     }else{
         Vec::new()
     };
@@ -1085,7 +1101,6 @@ pub fn demultiplex(
         let indexes_info = template_details.6;
     }
     */
-
     
     //let mut curr_template;
     let mut sample_id;
@@ -1107,51 +1122,429 @@ pub fn demultiplex(
     let start = Instant::now();
     let dur;
     
-    let bufsize: usize = 1 << 22;
-    let queuelen: usize = 2;
-
-    let mut reader_barcode_read_tmp = flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()); 
-    let mut reader_barcode_read = thread_reader::ThreadReader::new(reader_barcode_read_tmp, bufsize, queuelen);
     
-    let mut reader_paired_read = if !single_read_input {
-        let r1 = get_reader(&paired_read_file_path_final);
+    let (full_sender_rb, full_receiver_rb) = sync_channel(queuelen);
+    let (empty_sender_rb, empty_receiver_rb) = sync_channel(queuelen);
+    let (full_sender_rp, full_receiver_rp) = sync_channel(queuelen);
+    let (empty_sender_rp, empty_receiver_rp) = sync_channel(queuelen);
+    
+    let (full_sender_out, full_receiver_out) = sync_channel::<(usize, usize, u8, Vec<u8>)>(total_samples * 2);
+    let (empty_sender_out, empty_receiver_out) = sync_channel(total_samples * 2);
+    
+    let reading_gap_rp: usize = 3 * whole_paired_read_len;
+    let reading_gap_rb: usize = 3 * whole_read_barcode_len;
+    
+    let mut rb_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rb]} else {Vec::new()};
+    let mut rp_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rp]} else {Vec::new()};
+    
+    let thread_join_handle = if used_cpus > 1 {
+        
+        let mut out_read_barcode_buffer_thread: Vec<Vec<u8>> = vec![vec![0; reqiured_output_buffer_size]; total_samples];
+        let mut out_paired_read_buffer_thread: Vec<Vec<u8>> = if single_read_input {Vec::new()} else{vec![vec![0; reqiured_output_buffer_size]; total_samples]};
+        let mut out_read_barcode_buffer_last_thread: [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
+        let mut out_paired_read_buffer_last_thread : [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
+        
+        let mut output_barcode_file_paths_thread: Vec<Option<PathBuf>> = output_barcode_file_paths.clone();
+        let mut output_paired_file_paths_thread: Vec<Option<PathBuf>>  = output_paired_file_paths.clone();
+        let mut compressor_thread =  Compressor::new(CompressionLvl::new(compression_level as i32).unwrap());
+
+        if thread_reader{
+            for _ in 0..queuelen{
+                empty_sender_rb.send(vec![0u8; buffer_size]);
+                if ! single_read_input{
+                    empty_sender_rp.send(vec![0u8; buffer_size]);    
+                }
+            }
+        }
+        
+        for _ in 0..total_samples * 2{
+            empty_sender_out.send(vec![0u8; compression_buffer_size]);
+        }
+        
+
+        let mut read_rb:bool = thread_reader;
+        let mut read_rp:bool = thread_reader;
+        let mut write_1 :bool = used_cpus == 2;
+        let mut write_pool:bool = used_cpus > 2;
+        
+        let writers_threads: usize = if write_pool {used_cpus - 1 - if thread_reader {1} else {0}} else {0};
+        info!("Readers threads: {} threads.", if thread_reader {1} else {0});
+        info!("Writers threads: {} threads.", if used_cpus == 2 {1} else {writers_threads});
+        
+
+        let writers_pool: Option<ThreadPool> = if write_pool {
+            Some(ThreadPoolBuilder::new().num_threads(writers_threads).build().unwrap())
+        }else{
+            None
+        };
+
+
+        let mut reader_barcode_read = if thread_reader {
+            Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()))
+        } else {
+            None
+        };
+        
+        let mut reader_paired_read = if !single_read_input && thread_reader {
+            Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&paired_read_file_path_final).unwrap()))
+        } else {
+            None
+        };
+
+        let handle = thread::spawn(move|| {
+            
+            let mut total_bytes:usize;
+            let mut bytes:usize;
+            let mut actual_sz:usize;
+            let mut curr_writer: File;
+            
+            
+            loop{
+                if read_rb{
+                    match empty_receiver_rb.try_recv() {
+                        Ok(mut curr_buffer) => {
+                            match reader_barcode_read{
+                                Some(ref mut reader_barcode) => {
+                                    total_bytes = reading_gap_rb;
+                                    loop{
+                                        bytes = reader_barcode.read(&mut curr_buffer[total_bytes..]).unwrap();
+                                        total_bytes += bytes;
+                                        if bytes == 0 || total_bytes == buffer_size{
+                                            break;
+                                        }
+                                    }
+                                    if total_bytes > reading_gap_rb {
+                                        match full_sender_rb.send((total_bytes, curr_buffer)){
+                                            Ok(v) => {},//println!("All good: {v:?}"),
+                                            Err(e) => println!("error: {e:?}"),
+                                        }
+                                    }
+                                    if total_bytes < buffer_size{read_rb = false;}
+                                },
+                                None => {panic!("there must be a barcode read reader as there is a reader thread!")}
+                            }
+                        }
+                        Err(e) => {}
+                    }
+                }
+                
+                if read_rp{
+                    match reader_paired_read{
+                        Some(ref mut reader_paired) => {
+                            match empty_receiver_rp.try_recv() {
+                                Ok(mut curr_buffer) => {
+                                    total_bytes = reading_gap_rp;
+                                    loop{
+                                        bytes = reader_paired.read(&mut curr_buffer[total_bytes..]).unwrap();
+                                        total_bytes += bytes;
+                                        if bytes == 0 || total_bytes == buffer_size{
+                                            break;
+                                        }
+                                    }
+                                    if total_bytes > reading_gap_rp {
+                                        match full_sender_rp.send((total_bytes, curr_buffer)){
+                                            Ok(v) => {},//println!("All good: {v:?}"),
+                                            Err(e) => println!("error: {e:?}"),
+                                        }
+                                    }
+                                    if total_bytes < buffer_size{read_rp = false;}
+                                }
+                                Err(e) => {}
+                            }
+                        },
+                        None => {}
+                    }
+                }
+                
+                if write_1{
+                    match full_receiver_out.try_recv() {
+                        Ok((curr_writing_sample, curr_buffer_end, read_type, curr_buffer)) => { 
+                            //println!("Writer got: {} - {} - {}", curr_writing_sample, curr_buffer_end, read_type);
+                            
+                            if curr_writing_sample == usize::MAX{
+                                write_1 = false;
+                                for curr_writing_sample in 0..total_samples{
+                                    if !single_read_input && out_paired_read_buffer_last_thread[curr_writing_sample] > 0 {
+                                        match &output_paired_file_paths_thread[curr_writing_sample]{
+                                            Some(output_file_path) => {
+                                                curr_writer = OpenOptions::new()
+                                                .append(true)
+                                                .create(true)
+                                                .open(output_file_path)
+                                                .expect("couldn't create output");
+                                                curr_writer.write_all(&out_paired_read_buffer_thread[curr_writing_sample][..out_paired_read_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                curr_writer.flush().expect("couldn't flush output");
+                                                out_paired_read_buffer_last_thread[curr_writing_sample] = 0;
+                                            },
+                                            
+                                            None => panic!("expeted a writer, but None found!")
+                                        };
+                                    }
+                                    
+                                    if out_read_barcode_buffer_last_thread[curr_writing_sample] > 0 {
+                                        match &output_barcode_file_paths_thread[curr_writing_sample]{
+                                            Some(output_file_path) => {
+                                                curr_writer = OpenOptions::new()
+                                                .append(true)
+                                                .create(true)
+                                                .open(output_file_path)
+                                                .expect("couldn't create output");
+                                                curr_writer.write_all(&out_read_barcode_buffer_thread[curr_writing_sample][..out_read_barcode_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                curr_writer.flush().expect("couldn't flush output");
+                                                out_read_barcode_buffer_last_thread[curr_writing_sample] = 0;
+                                            },
+                                            None => panic!("expeted a writer, but None found!")
+                                        };
+                                    } 
+
+                                }
+                            }else{
+                                if read_type == 2{
+                                    actual_sz = compressor_thread.gzip_compress(&curr_buffer[0..curr_buffer_end],
+                                        &mut out_read_barcode_buffer_thread[curr_writing_sample][out_read_barcode_buffer_last_thread[curr_writing_sample]..]).unwrap();
+                                    out_read_barcode_buffer_last_thread[curr_writing_sample] += actual_sz;
+        
+                                    if out_read_barcode_buffer_last_thread[curr_writing_sample] >= final_writing_buffer_size {
+                                        match &output_barcode_file_paths_thread[curr_writing_sample]{
+                                            Some(output_file_path) => {
+                                                curr_writer = OpenOptions::new()
+                                                .append(true)
+                                                .create(true)
+                                                .open(output_file_path)
+                                                .expect("couldn't create output");
+                                                curr_writer.write_all(&out_read_barcode_buffer_thread[curr_writing_sample][..out_read_barcode_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                curr_writer.flush().expect("couldn't flush output");
+                                                out_read_barcode_buffer_last_thread[curr_writing_sample] = 0;
+                                            },
+                                            None => panic!("expeted a writer, but None found!")
+                                        };
+                                    } 
+                                }else if read_type == 1{
+                                    actual_sz = compressor_thread.gzip_compress(&&curr_buffer[0.. curr_buffer_end], 
+                                        &mut out_paired_read_buffer_thread[curr_writing_sample][out_paired_read_buffer_last_thread[curr_writing_sample]..]).unwrap();
+                                    out_paired_read_buffer_last_thread[curr_writing_sample] += actual_sz;
+                                    
+                                    if out_paired_read_buffer_last_thread[curr_writing_sample] >= final_writing_buffer_size {
+                                        match &output_paired_file_paths_thread[curr_writing_sample]{
+                                            Some(output_file_path) => {
+                                                curr_writer = OpenOptions::new()
+                                                .append(true)
+                                                .create(true)
+                                                .open(output_file_path)
+                                                .expect("couldn't create output");
+                                                curr_writer.write_all(&out_paired_read_buffer_thread[curr_writing_sample][..out_paired_read_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                curr_writer.flush().expect("couldn't flush output");
+                                                out_paired_read_buffer_last_thread[curr_writing_sample] = 0;
+                                            },
+                                            
+                                            None => panic!("expeted a writer, but None found!")
+                                        };
+                                    }
+                                }else {
+                                    println!("Unknown read type {}", read_type);
+                                }
+                                empty_sender_out.send(curr_buffer);
+                            }
+                            
+                            
+                            
+                        }
+                        Err(e) => {}
+                    }
+                }
+                
+                match writers_pool{
+                    Some(ref pool) => {
+                        match full_receiver_out.try_recv() {
+                            Ok((curr_writing_sample, curr_buffer_end, read_type, curr_buffer)) => {
+                                //println!("Writer got: {} - {} - {}", curr_writing_sample, curr_buffer_end, read_type);
+                                if curr_writing_sample == usize::MAX{
+                                    write_pool = false;
+                                    for curr_writing_sample in 0..total_samples{
+                                        if !single_read_input && out_paired_read_buffer_last_thread[curr_writing_sample] > 0 {
+                                            match &output_paired_file_paths_thread[curr_writing_sample]{
+                                                Some(output_file_path) => {
+                                                    curr_writer = OpenOptions::new()
+                                                    .append(true)
+                                                    .create(true)
+                                                    .open(output_file_path)
+                                                    .expect("couldn't create output");
+                                                    curr_writer.write_all(&out_paired_read_buffer_thread[curr_writing_sample][..out_paired_read_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                    curr_writer.flush().expect("couldn't flush output");
+                                                    out_paired_read_buffer_last_thread[curr_writing_sample] = 0;
+                                                },
+                                                
+                                                None => panic!("expeted a writer, but None found!")
+                                            };
+                                        }
+                                        
+                                        if out_read_barcode_buffer_last_thread[curr_writing_sample] > 0 {
+                                            match &output_barcode_file_paths_thread[curr_writing_sample]{
+                                                Some(output_file_path) => {
+                                                    curr_writer = OpenOptions::new()
+                                                    .append(true)
+                                                    .create(true)
+                                                    .open(output_file_path)
+                                                    .expect("couldn't create output");
+                                                    curr_writer.write_all(&out_read_barcode_buffer_thread[curr_writing_sample][..out_read_barcode_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                    curr_writer.flush().expect("couldn't flush output");
+                                                    out_read_barcode_buffer_last_thread[curr_writing_sample] = 0;
+                                                },
+                                                None => panic!("expeted a writer, but None found!")
+                                            };
+                                        } 
+    
+                                    }
+                                }else{
+                                    pool.install(|| {                                    
+                                        let mut actual_sz:usize;
+                                        let mut curr_writer: File;
+                                        if read_type == 2{
+                                        actual_sz = compressor_thread.gzip_compress(&curr_buffer[0..curr_buffer_end],
+                                            &mut out_read_barcode_buffer_thread[curr_writing_sample][out_read_barcode_buffer_last_thread[curr_writing_sample]..]).unwrap();
+                                        out_read_barcode_buffer_last_thread[curr_writing_sample] += actual_sz;
+            
+                                        if out_read_barcode_buffer_last_thread[curr_writing_sample] >= final_writing_buffer_size {
+                                            match &output_barcode_file_paths_thread[curr_writing_sample]{
+                                                Some(output_file_path) => {
+                                                    curr_writer = OpenOptions::new()
+                                                    .append(true)
+                                                    .create(true)
+                                                    .open(output_file_path)
+                                                    .expect("couldn't create output");
+                                                    curr_writer.write_all(&out_read_barcode_buffer_thread[curr_writing_sample][..out_read_barcode_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                    curr_writer.flush().expect("couldn't flush output");
+                                                    out_read_barcode_buffer_last_thread[curr_writing_sample] = 0;
+                                                },
+                                                None => panic!("expeted a writer, but None found!")
+                                            };
+                                        } 
+                                        }else if read_type == 1{
+                                            actual_sz = compressor_thread.gzip_compress(&&curr_buffer[0.. curr_buffer_end], 
+                                                &mut out_paired_read_buffer_thread[curr_writing_sample][out_paired_read_buffer_last_thread[curr_writing_sample]..]).unwrap();
+                                            out_paired_read_buffer_last_thread[curr_writing_sample] += actual_sz;
+                                            
+                                            if out_paired_read_buffer_last_thread[curr_writing_sample] >= final_writing_buffer_size {
+                                                match &output_paired_file_paths_thread[curr_writing_sample]{
+                                                    Some(output_file_path) => {
+                                                        curr_writer = OpenOptions::new()
+                                                        .append(true)
+                                                        .create(true)
+                                                        .open(output_file_path)
+                                                        .expect("couldn't create output");
+                                                        curr_writer.write_all(&out_paired_read_buffer_thread[curr_writing_sample][..out_paired_read_buffer_last_thread[curr_writing_sample]]).unwrap();
+                                                        curr_writer.flush().expect("couldn't flush output");
+                                                        out_paired_read_buffer_last_thread[curr_writing_sample] = 0;
+                                                    },
+                                                    
+                                                    None => panic!("expeted a writer, but None found!")
+                                                };
+                                            }
+                                        }else {
+                                            println!("Unknown read type {}", read_type);
+                                        }
+                                        empty_sender_out.send(curr_buffer);
+                                    });
+                                }
+                            },
+                            Err(e) => {
+                                //println!("Error receving")
+                            }
+                        }
+                    },
+                    None => {}
+
+                };
+                
+                
+                
+                
+                if ! ( read_rb || read_rp || write_1 || write_pool){
+                    info!("Readers/writers thread is done!");
+                    break;
+                }
+
+            }
+        });
+        
+        Some(handle)
+    
+    }else {
+        None
+    };
+
+    let mut reader_barcode_read = if !thread_reader{
+        Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()))
+    } else {
+        None
+    };
+    
+    let mut reader_paired_read = if !thread_reader && !single_read_input {
+        let r1 = flate2::read::MultiGzDecoder::new(std::fs::File::open(&paired_read_file_path_final).unwrap());
         Some(r1)
     } else {
         None
     };
     
-
-    let mut buffer_1 = [0; BUFFER_SIZE];  // paired read
-    let mut buffer_2 = [0; BUFFER_SIZE]; // read with barcode
+    
+    let mut buffer_1: Vec<u8>; // paired read
+    let mut buffer_2: Vec<u8>; // read with barcode
+    let mut buffer_1_tmp: Vec<u8>; // paired read
+    let mut buffer_2_tmp: Vec<u8>; // read with barcode
     
     let mut read_bytes_1: usize = 0;
-    if !single_read_input{
-        match reader_paired_read{
-            Some(ref mut reader) => {
-                read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
-            },
-            None => panic!("expected single end input!")
-        }
-        if read_bytes_1 == 0{
-            panic!("No data in R1!");
-        }
-    }
-        
     let mut read_bytes_2: usize = 0;
-    read_bytes(&mut reader_barcode_read, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
-    if read_bytes_2 == 0{
-        panic!("No data in R2!");
-    }
-    
 
-    let mut header_start: usize = 0;
+    match thread_reader{
+        true => {
+            (read_bytes_2, buffer_2) = full_receiver_rb.recv().unwrap();
+            if single_read_input{
+                read_bytes_1 = 0;
+                buffer_1 = Vec::new();  
+            }else{
+                (read_bytes_1, buffer_1) = full_receiver_rp.recv().unwrap();
+                
+            }
+            
+        },
+        false => {
+            buffer_2 = vec![0; buffer_size];
+            match reader_barcode_read{
+                Some(ref mut reader) => {
+                    read_bytes(reader, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
+                    if read_bytes_2 == 0{
+                        panic!("No data in R2!");
+                    }
+                },
+                None => {panic!("There should be a reader here!")}
+            }
+            
+            if !single_read_input{
+                buffer_1 = vec![0; buffer_size];
+                match reader_paired_read{
+                    Some(ref mut reader) => {
+                        read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
+                    },
+                    None => panic!("expected single end input!")
+                }
+                if read_bytes_1 == 0{
+                    panic!("No data in R1!");
+                }
+            }else{
+                buffer_1 = Vec::new();
+            }
+        }
+    }
+
+    
+    let mut header_start: usize = if thread_reader {reading_gap_rb} else {0};
     let mut read_end: usize;
     
     let mut read_end_pr: usize = 0;
     let mut seq_start: usize;
     let mut plus_start: usize;
     let mut qual_start: usize;
-    let mut header_start_pr: usize = 0;
+    let mut header_start_pr: usize = if thread_reader {reading_gap_rp} else {0};
     let mut seq_start_pr: usize = 0;
     let mut plus_start_pr: usize;
     let mut qual_start_pr: usize = 0;
@@ -1162,10 +1555,12 @@ pub fn demultiplex(
     let mut curr_writing_sample:usize;
     
     let mut curr_writer: File;
-    let mut curr_buffer_limit:usize;
     let mut undertmined_threshold_check = 1000;
 
     let all_index_allowed_mismatches = if all_index_error {allowed_mismatches} else {allowed_mismatches * 2};
+    let mut rp_leftovers_len: usize = 0;
+    let mut rb_leftovers_len: usize = 0;
+    let mut temp_compression_buffer: Vec<u8>;
 
     loop {
         //info!("Read: {}", read_cntr);
@@ -1188,7 +1583,7 @@ pub fn demultiplex(
             };
             whole_read_barcode_len = 2 * (read_end - header_start + 1);
             extra_comfort_barcode  = whole_read_barcode_len + illumina_header_prefix.len() + barcode_length + 25;
-    
+            
             
 
         }else{
@@ -1481,6 +1876,7 @@ pub fn demultiplex(
                 extra_comfort_paired = whole_paired_read_len + illumina_header_prefix.len() + barcode_length + 25;
                 //println!("Z2: {} - {}  - {}  -> {}", header_start_pr, read_end_pr, read_cntr, whole_paired_read_len);
                 //println!("{}", unsafe { std::str::from_utf8(&buffer_1[header_start_pr..read_end_pr + 1]).unwrap()}); 
+                
 
             }else{
                 seq_start_pr = header_start_pr + header_length_r1;
@@ -1555,43 +1951,48 @@ pub fn demultiplex(
                 
         sample_mismatches[sample_id][0] += 1;
         sample_mismatches[sample_id][curr_mismatch + 1] += 1;
-        
-        
+                
         curr_writing_sample = writing_samples[sample_id];
-        // writing preperation
         curr_buffer_end = out_read_barcode_compression_buffer_last[curr_writing_sample];
-        curr_buffer_limit =  curr_writing_sample * compression_buffer_size + compression_buffer_size;
+        
+        // writing preperation
         // this works for mgi format and unde and ambig and ilumina with a bit of extr
-        if curr_buffer_end + extra_comfort_barcode >= curr_buffer_limit {
-            actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[curr_writing_sample * compression_buffer_size..curr_buffer_end],
-                                   &mut out_read_barcode_buffer[curr_writing_sample][out_read_barcode_buffer_last[curr_writing_sample]..]).unwrap();
-            out_read_barcode_buffer_last[curr_writing_sample] += actual_sz;
+        if curr_buffer_end + extra_comfort_barcode >= compression_buffer_size {
+                        
+            if thread_writer {
+                temp_compression_buffer = empty_receiver_out.recv().unwrap();
+                std::mem::swap(&mut out_read_barcode_compression_buffer[curr_writing_sample], &mut temp_compression_buffer);
+                full_sender_out.send((curr_writing_sample, curr_buffer_end, 2u8, temp_compression_buffer));
+                curr_buffer_end = 0;    
+            }else{
+                actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[curr_writing_sample][0..curr_buffer_end],
+                                    &mut out_read_barcode_buffer[curr_writing_sample][out_read_barcode_buffer_last[curr_writing_sample]..]).unwrap();
+                out_read_barcode_buffer_last[curr_writing_sample] += actual_sz;
 
-            curr_buffer_end = curr_writing_sample * compression_buffer_size;
+                curr_buffer_end = 0;
 
-            if out_read_barcode_buffer_last[curr_writing_sample] >= final_writing_buffer_size {
-                match &output_barcode_file_paths[curr_writing_sample]{
-                    Some(output_file_path) => {
-                        curr_writer = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open(output_file_path)
-                        .expect("couldn't create output");
-                        curr_writer.write_all(&out_read_barcode_buffer[curr_writing_sample][..out_read_barcode_buffer_last[curr_writing_sample]]).unwrap();
-                        curr_writer.flush().expect("couldn't flush output");
-                        out_read_barcode_buffer_last[curr_writing_sample] = 0;
-                    },
-                    
-                    None => panic!("expeted a writer, but None found!")
-                };
-            }          
+                if out_read_barcode_buffer_last[curr_writing_sample] >= final_writing_buffer_size {
+                    match &output_barcode_file_paths[curr_writing_sample]{
+                        Some(output_file_path) => {
+                            curr_writer = OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(output_file_path)
+                            .expect("couldn't create output");
+                            curr_writer.write_all(&out_read_barcode_buffer[curr_writing_sample][..out_read_barcode_buffer_last[curr_writing_sample]]).unwrap();
+                            curr_writer.flush().expect("couldn't flush output");
+                            out_read_barcode_buffer_last[curr_writing_sample] = 0;
+                        },
+                        
+                        None => panic!("expeted a writer, but None found!")
+                    };
+                } 
+            }        
         }
 
 
-
-
         if sample_id >= undetermined_label_id{
-            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
+            out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
                     copy_from_slice(&buffer_2[header_start..read_end + 1]);
         
             
@@ -1602,35 +2003,34 @@ pub fn demultiplex(
             if illumina_format{
                 // Illumina format write the heder and skip the header for mgi.
                 barcode_read_illumina_header_start = curr_buffer_end;
-                out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
                 copy_from_slice(&illumina_header_prefix[..]);
                 curr_buffer_end += illumina_header_prefix.len();
     
-                curr_buffer_end = write_illumina_header(&mut out_read_barcode_compression_buffer, 
+                curr_buffer_end = write_illumina_header(&mut out_read_barcode_compression_buffer[curr_writing_sample], 
                     curr_buffer_end, &buffer_2[header_start..seq_start], 
                                         &curr_umi.as_bytes(), l_position, seq_start - header_start - 3, false);
                
-                out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + curr_barcode.len()]
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
                     .copy_from_slice(&curr_barcode.as_bytes());
                 curr_buffer_end += curr_barcode.len();
                 barcode_read_illumina_header_end = curr_buffer_end;
                 header_start = seq_start - 1; 
             }        
             
-                        
-            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
+            out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
                 copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
     
             curr_buffer_end += plus_start - header_start - writen_barcode_length - 1;
                     
-            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
+            out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
                         copy_from_slice(&buffer_2[plus_start - 1..read_end - writen_barcode_length]);
                 
             curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
-            out_read_barcode_compression_buffer[curr_buffer_end - 1] = b'\n';
+            out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end - 1] = b'\n';
             out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end;
 
-            if curr_buffer_end >= curr_buffer_limit{
+            if curr_buffer_end >= compression_buffer_size{
                 // remove if it does not happen again!
                 panic!("R2 exceeds the buffer limit! somthing wrong with writing to the buffers!");
             }
@@ -1639,49 +2039,56 @@ pub fn demultiplex(
         
         if ! single_read_input{
             curr_buffer_end = out_paired_read_compression_buffer_last[curr_writing_sample];
-            if curr_buffer_end + extra_comfort_paired >= curr_buffer_limit{                
+            if curr_buffer_end + extra_comfort_paired >= compression_buffer_size{                
                 
-                actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[curr_writing_sample * compression_buffer_size .. curr_buffer_end], 
-                    &mut out_paired_read_buffer[curr_writing_sample][out_paired_read_buffer_last[curr_writing_sample]..]).unwrap();
-                out_paired_read_buffer_last[curr_writing_sample] += actual_sz;
-                curr_buffer_end = curr_writing_sample * compression_buffer_size;
+                if thread_writer {
+                    temp_compression_buffer = empty_receiver_out.recv().unwrap();
+                    std::mem::swap(&mut out_paired_read_compression_buffer[curr_writing_sample], &mut temp_compression_buffer);
+                    full_sender_out.send((curr_writing_sample, curr_buffer_end, 1u8, temp_compression_buffer));
+                    curr_buffer_end = 0;    
+                }else{
+                    actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[curr_writing_sample][0.. curr_buffer_end], 
+                        &mut out_paired_read_buffer[curr_writing_sample][out_paired_read_buffer_last[curr_writing_sample]..]).unwrap();
+                    out_paired_read_buffer_last[curr_writing_sample] += actual_sz;
+                    curr_buffer_end = 0;
 
-                if out_paired_read_buffer_last[curr_writing_sample] >= final_writing_buffer_size {
-                    match &output_paired_file_paths[curr_writing_sample]{
-                        Some(output_file_path) => {
-                            curr_writer = OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(output_file_path)
-                            .expect("couldn't create output");
-                            curr_writer.write_all(&out_paired_read_buffer[curr_writing_sample][..out_paired_read_buffer_last[curr_writing_sample]]).unwrap();
-                            curr_writer.flush().expect("couldn't flush output");
-                            out_paired_read_buffer_last[curr_writing_sample] = 0;
-                        },
-                        
-                        None => panic!("expeted a writer, but None found!")
-                    };
-                }             
+                    if out_paired_read_buffer_last[curr_writing_sample] >= final_writing_buffer_size {
+                        match &output_paired_file_paths[curr_writing_sample]{
+                            Some(output_file_path) => {
+                                curr_writer = OpenOptions::new()
+                                .append(true)
+                                .create(true)
+                                .open(output_file_path)
+                                .expect("couldn't create output");
+                                curr_writer.write_all(&out_paired_read_buffer[curr_writing_sample][..out_paired_read_buffer_last[curr_writing_sample]]).unwrap();
+                                curr_writer.flush().expect("couldn't flush output");
+                                out_paired_read_buffer_last[curr_writing_sample] = 0;
+                            },
+                            
+                            None => panic!("expeted a writer, but None found!")
+                        };
+                    }             
+                }
             }
 
             if illumina_format && sample_id < undetermined_label_id{
                 
                 if read2_has_sequence{
-                    out_paired_read_compression_buffer[curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
-                    copy_from_slice(&out_read_barcode_compression_buffer[barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
+                    out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
+                    copy_from_slice(&out_read_barcode_compression_buffer[curr_writing_sample][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
                     curr_buffer_end += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
-                    out_paired_read_compression_buffer[curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
+                    out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
                 }else{
 
-                    out_paired_read_compression_buffer[curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
+                    out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
                     copy_from_slice(&illumina_header_prefix[..]);
                     curr_buffer_end += illumina_header_prefix.len();
     
-                    curr_buffer_end = write_illumina_header(&mut out_paired_read_compression_buffer, 
+                    curr_buffer_end = write_illumina_header(&mut out_paired_read_compression_buffer[curr_writing_sample], 
                         curr_buffer_end, &buffer_1[header_start_pr..seq_start_pr], 
                                             &curr_umi.as_bytes(), l_position, seq_start_pr - header_start_pr - 3, false);
                    
-                    out_paired_read_compression_buffer[curr_buffer_end..curr_buffer_end + curr_barcode.len()]
+                    out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
                         .copy_from_slice(&curr_barcode.as_bytes());
                     curr_buffer_end += curr_barcode.len();
 
@@ -1691,65 +2098,127 @@ pub fn demultiplex(
             }
 
             
-            out_paired_read_compression_buffer[curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
+            out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
                 copy_from_slice(&buffer_1[header_start_pr..read_end_pr + 1]);
                 
             out_paired_read_compression_buffer_last[curr_writing_sample] = curr_buffer_end + read_end_pr - header_start_pr + 1;
             
-            if out_paired_read_compression_buffer_last[curr_writing_sample] >= curr_buffer_limit{
+            if out_paired_read_compression_buffer_last[curr_writing_sample] >= compression_buffer_size{
                 // remove if it does not happen again!
                 panic!("R1 exceeds the buffer limit! somthing wrong with writing to the buffers!");
             }
 
-            
+            // whole_paired_read_len is doubled here
             if read_end_pr + whole_paired_read_len >= read_bytes_1 {
                 //println!("R1: {}-{}-{}-{}-{}", read_cntr, whole_paired_read_len, header_start_pr, read_end_pr, read_bytes_1);
-                if read_end_pr < read_bytes_1 - 1 {
-                    copy_within_a_slice(&mut buffer_1, read_end_pr + 1, 0, read_bytes_1 - read_end_pr - 1);
-                    read_bytes_1 -= read_end_pr + 1;
-                    header_start_pr = 0;
-                }else if read_end_pr == read_bytes_1 - 1{
-                    header_start_pr = 0;
-                    read_bytes_1 = 0;
+                if thread_reader{
+                    if read_bytes_1 == buffer_size{
+                        if read_end_pr < read_bytes_1 - 1{
+                            rp_leftovers[0..read_bytes_1 - read_end_pr - 1].copy_from_slice(&buffer_1[read_end_pr + 1..read_bytes_1]);
+                            rp_leftovers_len = read_bytes_1 - read_end_pr - 1;
+                        }
+                        empty_sender_rp.send(buffer_1);
+                        (read_bytes_1, buffer_1) = full_receiver_rp.recv().unwrap();
+
+                        if rp_leftovers_len > 0{
+                            buffer_1[reading_gap_rp - rp_leftovers_len..reading_gap_rp].copy_from_slice(&rp_leftovers[0..rp_leftovers_len]);
+                            header_start_pr = reading_gap_rp - rp_leftovers_len;
+                            rp_leftovers_len = 0;
+                        }else{
+                            header_start_pr = reading_gap_rp;
+                        }
+                        
+                        
+                    }else{
+                        header_start_pr = read_end_pr + 1;
+                        if header_start_pr >= read_bytes_1{
+                            read_bytes_1 = 0;
+                        }
+                    }
+                    
+    
                 }else{
-                    // this for testing, if it doies not appear, we can take it off.
-                    panic!("read end should not be greater than the buffer size!");
-                }
-                
-                match reader_paired_read{
-                    Some(ref mut reader) => {
-                        read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
-                    },
-                    None => panic!("expected sinle end input!")
-                };
+                    if read_end_pr < read_bytes_1 - 1 {
+                        copy_within_a_slice(&mut buffer_1, read_end_pr + 1, 0, read_bytes_1 - read_end_pr - 1);
+                        read_bytes_1 -= read_end_pr + 1;
+                        header_start_pr = 0;
+                    }else if read_end_pr == read_bytes_1 - 1{
+                        header_start_pr = 0;
+                        read_bytes_1 = 0;
+                    }else{
+                        // this for testing, if it doies not appear, we can take it off.
+                        panic!("read end should not be greater than the buffer size!");
+                    }
+                    
+                    match reader_paired_read{
+                        Some(ref mut reader) => {
+                            read_bytes(reader, &mut buffer_1, whole_paired_read_len, &mut read_bytes_1);
+                        },
+                        None => panic!("expected single end input!")
+                    };
+                }                   
             }else{
                 header_start_pr = read_end_pr + 1;
             }
             
         }
 
+        // whole_read_barcode_len is doubled here
         if read_end + whole_read_barcode_len >= read_bytes_2{
             //println!("R2: {}-{}-{}-{}-{}", read_cntr, whole_read_barcode_len, header_start, read_end, read_bytes_2);
-            if read_end < read_bytes_2 - 1 {
-                copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end - 1);
-                read_bytes_2 -= read_end + 1;
-                header_start = 0;
-            }else if read_end == read_bytes_2 - 1{
-                header_start = 0;
-                read_bytes_2 = 0;
+            if thread_reader{
+                if read_bytes_2 == buffer_size{
+                    if read_end < read_bytes_2 - 1{
+                        rb_leftovers[0..read_bytes_2 - read_end - 1].copy_from_slice(&buffer_2[read_end + 1..read_bytes_2]);
+                        rb_leftovers_len = read_bytes_2 - read_end - 1;
+                    }
+                    empty_sender_rb.send(buffer_2);
+                    (read_bytes_2, buffer_2) = full_receiver_rb.recv().unwrap();
+                    if rb_leftovers_len > 0{
+                        buffer_2[reading_gap_rb - rb_leftovers_len..reading_gap_rb].copy_from_slice(&rb_leftovers[0..rb_leftovers_len]);
+                        header_start = reading_gap_rb - rb_leftovers_len;
+                        rb_leftovers_len = 0;
+                    }else{
+                        header_start = reading_gap_rb;
+                    }
+                    
+                }else{
+                    header_start = read_end + 1;
+                    if header_start >= read_bytes_2{
+                        read_bytes_2 = 0;
+                    }
+                }
+
+                
             }else{
-                // this for testing, if it doies not appear, we can take it off.
-                panic!("read end should not be greater than the buffer size!");
-            }
+                if read_end < read_bytes_2 - 1 {
+                    copy_within_a_slice(&mut buffer_2, read_end + 1, 0, read_bytes_2 - read_end - 1);
+                    read_bytes_2 -= read_end + 1;
+                    header_start = 0;
+                }else if read_end == read_bytes_2 - 1{
+                    header_start = 0;
+                    read_bytes_2 = 0;
+                }else{
+                    // this for testing, if it doies not appear, we can take it off.
+                    panic!("read end should not be greater than the buffer size!");
+                }
+                match reader_barcode_read{
+                    Some(ref mut reader) => {
+                        read_bytes(reader, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
+                    },
+                    None => {panic!("There should be a reader here!")}
+                }
+                
+            }           
             
-            read_bytes(&mut reader_barcode_read, &mut buffer_2, whole_read_barcode_len, &mut read_bytes_2);
-            if read_bytes_2 == 0{
-                if !single_read_input && read_bytes_1 != 0 {
-                    panic!("Seems like R1 buffer still have reads! It is expected to hav same read count as R2!")
+            if read_bytes_2 == 0 && rb_leftovers_len == 0{
+                if !single_read_input && (read_bytes_1 != 0 || rp_leftovers_len != 0) {
+                    panic!("Seems like R1 buffer still have reads! It is expected to have same read count as R2!")
                 }
                 break;
             }
             
+
         }else{
             header_start = read_end + 1;
         }
@@ -1758,22 +2227,9 @@ pub fn demultiplex(
         
     }
 
-    
-    
-    
-    let handle = reader_barcode_read.handle_take().unwrap();
-    ::std::mem::drop(reader_barcode_read);
-    match handle.join() {
-        Ok(_) => println!("Done!"),
-        Err(e) => panic!("Error"),
-    };
-    
-    
-    
-    
-    
+        
     let max_mismatches = if all_index_error {allowed_mismatches + 1} else {allowed_mismatches * 2 + 1};
-    
+    info!("thread writer: {}", thread_writer);
     
     
     for sample_id in 0..total_samples {
@@ -1788,13 +2244,20 @@ pub fn demultiplex(
         if curr_writing_sample == sample_id 
         {
             if !single_read_input {
-                if out_paired_read_compression_buffer_last[curr_writing_sample] > curr_writing_sample * compression_buffer_size {
-                    actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[curr_writing_sample * compression_buffer_size..out_paired_read_compression_buffer_last[curr_writing_sample]],
-                         &mut out_paired_read_buffer[curr_writing_sample][out_paired_read_buffer_last[curr_writing_sample]..]).unwrap();
-                    out_paired_read_buffer_last[curr_writing_sample] += actual_sz;
+                if out_paired_read_compression_buffer_last[curr_writing_sample] > 0 {
+                    if thread_writer {
+                        temp_compression_buffer = empty_receiver_out.recv().unwrap();
+                        std::mem::swap(&mut out_paired_read_compression_buffer[curr_writing_sample], &mut temp_compression_buffer);
+                        full_sender_out.send((curr_writing_sample, out_paired_read_compression_buffer_last[curr_writing_sample], 1u8, temp_compression_buffer));
+                        
+                    }else{
+                        actual_sz = compressor.gzip_compress(&out_paired_read_compression_buffer[curr_writing_sample][0..out_paired_read_compression_buffer_last[curr_writing_sample]],
+                            &mut out_paired_read_buffer[curr_writing_sample][out_paired_read_buffer_last[curr_writing_sample]..]).unwrap();
+                        out_paired_read_buffer_last[curr_writing_sample] += actual_sz;
+                    }
                 }
 
-                if out_paired_read_buffer_last[curr_writing_sample] > 0{
+                if !thread_writer && out_paired_read_buffer_last[curr_writing_sample] > 0{
                     match &output_paired_file_paths[curr_writing_sample]{
                         Some(output_file_path) => {
                             curr_writer = OpenOptions::new()
@@ -1812,12 +2275,19 @@ pub fn demultiplex(
             }             
             
     
-            if out_read_barcode_compression_buffer_last[curr_writing_sample] > curr_writing_sample * compression_buffer_size{
-                actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[curr_writing_sample * compression_buffer_size ..out_read_barcode_compression_buffer_last[curr_writing_sample]],             
+            if out_read_barcode_compression_buffer_last[curr_writing_sample] > 0{
+                if thread_writer {
+                    temp_compression_buffer = empty_receiver_out.recv().unwrap();
+                    std::mem::swap(&mut out_read_barcode_compression_buffer[curr_writing_sample], &mut temp_compression_buffer);
+                    full_sender_out.send((curr_writing_sample, out_read_barcode_compression_buffer_last[curr_writing_sample], 2u8, temp_compression_buffer));
+                }else{
+                    actual_sz = compressor.gzip_compress(&out_read_barcode_compression_buffer[curr_writing_sample][0..out_read_barcode_compression_buffer_last[curr_writing_sample]],             
                     &mut out_read_barcode_buffer[curr_writing_sample][out_read_barcode_buffer_last[curr_writing_sample]..]).unwrap();
-                out_read_barcode_buffer_last[curr_writing_sample] += actual_sz;
+                    out_read_barcode_buffer_last[curr_writing_sample] += actual_sz;
+                }
             }
-            if out_read_barcode_buffer_last[curr_writing_sample] > 0{
+
+            if !thread_writer && out_read_barcode_buffer_last[curr_writing_sample] > 0{
                 match &output_barcode_file_paths[curr_writing_sample]{
                     Some(output_file_path) => {
                         curr_writer = OpenOptions::new()
@@ -1832,8 +2302,6 @@ pub fn demultiplex(
                     None => panic!("expeted a writer, but None found!")
                 };            
             }
-            
-            
         } 
     }
     
@@ -1841,7 +2309,7 @@ pub fn demultiplex(
     dur = start.elapsed();
     
     info!("{} reads were processed in {} secs.", read_cntr, dur.as_secs());
-   
+    
     let start_logs = Instant::now();
     
     
@@ -1974,6 +2442,17 @@ pub fn demultiplex(
     let log_dur = start_logs.elapsed();
     
     info!("Writing all logs and reports took {} secs.", log_dur.as_secs());
+
+    full_sender_out.send((usize::MAX, usize::MAX, 0u8, Vec::new()));
+        
+    if used_cpus > 1{
+        let _ = match thread_join_handle{
+            Some(handler) => handler.join().unwrap(),
+            None => {panic!("there must be a writer thread here!")}
+        };
+        
+    }
+    
     Ok(())
 }
 

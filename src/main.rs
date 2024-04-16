@@ -290,7 +290,16 @@ fn main() {
                         .action(ArgAction::SetTrue)
                         .default_value("false")
                         .help("This flag needs to be enabled if the input fastq files don't have MGI format.")
-                    ) 
+                    )
+                .arg(
+                    Arg::new("arg_threads")
+                        .long("threads")
+                        .short('t')
+                        .default_value("0")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The requested threads to be used. Default is 0 which means to use all available CPUs.")
+                )
+
         )
         .subcommand(
             Command::new("template")
@@ -572,6 +581,7 @@ fn main() {
                 let arg_all_index_error:  &bool = demultiplex_command.get_one::<bool>("arg_all_index_error").unwrap();
                 let arg_memory: &f64 = demultiplex_command.get_one::<f64>("arg_memory").unwrap();
                 let arg_not_mgi: &bool = demultiplex_command.get_one::<bool>("arg_not_mgi").unwrap();
+                let arg_threads: &usize = demultiplex_command.get_one::<usize>("arg_threads").unwrap();
                 match demultiplex(
                     arg_input_folder_path,
                     &mut arg_read1_file_path,
@@ -604,7 +614,8 @@ fn main() {
                     *arg_ignore_undetermined,
                     *arg_all_index_error,
                     *arg_memory,
-                    *arg_not_mgi
+                    *arg_not_mgi,
+                    *arg_threads
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),
