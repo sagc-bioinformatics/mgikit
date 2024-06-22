@@ -872,7 +872,7 @@ pub fn demultiplex(
         header_length_r1 = header.len();
         paired_read_length = seq.chars().count() - 1;
         only_plus_r1 = plus == "+\n";
-        if ! only_plus_r1{
+        if ! only_plus_r1 && ! dynamic_demultiplexing{
             panic!("Expected read format is not satisified. You can try running --flexible command.");
         }
     }
