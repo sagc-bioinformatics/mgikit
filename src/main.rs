@@ -528,6 +528,7 @@ fn main() {
                 )  
                                                
         )
+        .arg_required_else_help(true)
         .get_matches();
         
 
