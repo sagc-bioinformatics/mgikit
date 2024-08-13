@@ -642,6 +642,26 @@ fn read_bytes<R: Read>(reader: &mut R, buffer: &mut[u8], minimum:usize, last_byt
     }
 }
 
+/*
+fn fill_send_buffers<R: Read>(full_sender:SyncSender<(usize, Vec<u8>)>, empty_receiver:Receiver< VecVec<u8>>, reader: &mut R, buffer_size: usize){
+    let keep_working = true;
+    let mut total_bytes = 0;
+
+    match empty_receiver.try_recv() {
+        Ok(mut buffer) => {
+            read_bytes(reader, &mut buffer, buffer_size - 1, &mut total_bytes);
+            if total_bytes > 0 {
+                match full_sender.send((total_bytes, curr_buffer)){
+                    Ok(v) => {},//println!("All good: {v:?}"),
+                    Err(e) => println!("error: {e:?}"),
+                }
+            }
+        }
+        Err(e) => {}
+    }    
+}
+*/
+
 /// demultiplex docs
 /// This is the main funciton in this crate, which demultiplex fastq single/paired end files and output samples' fastq and quality and run statistics reports.
 /// 
@@ -689,6 +709,9 @@ pub fn demultiplex(
     requested_threads: usize,
 ) -> Result<(), Box<dyn Error>> {
     
+    let start = Instant::now();
+    let dur;
+     
     // Validate and prepare input data and parameters.
     let trim_barcode = !keep_barcode;
     
@@ -1102,102 +1125,43 @@ pub fn demultiplex(
     }
     */
     
-    //let mut curr_template;
-    let mut sample_id;
-    let mut barcode_read_illumina_header_start:usize = 0;
-    let mut barcode_read_illumina_header_end:usize = 0;
-    let mut read_cntr:u64 = 1;
-    let mut curr_mismatch: usize;
-    let mut latest_mismatch:usize;
-    let mut curr_umi = String::new();
-    let mut curr_barcode = String::new();
-    //let mut matching_samples: Vec<(String, u32)> = Vec::new();
-    let mut undetermined_barcodes: HashMap<String, u32> = HashMap::new();
-    let mut ambiguous_barcodes: HashMap<String, u32> = HashMap::new();
-    
-    let mut all_i7_mismatches;
-    let mut all_i5_mismatches;
-    let shift = if single_read_input{0}else{1};
-
-    let start = Instant::now();
-    let dur;
-    
-    
     let (full_sender_rb, full_receiver_rb) = sync_channel(queuelen);
     let (empty_sender_rb, empty_receiver_rb) = sync_channel(queuelen);
     let (full_sender_rp, full_receiver_rp) = sync_channel(queuelen);
     let (empty_sender_rp, empty_receiver_rp) = sync_channel(queuelen);
     
-    let (full_sender_out, full_receiver_out) = sync_channel::<(usize, usize, u8, Vec<u8>)>(total_samples * 2);
-    let (empty_sender_out, empty_receiver_out) = sync_channel(total_samples * 2);
-    
-    let reading_gap_rp: usize = 3 * whole_paired_read_len;
-    let reading_gap_rb: usize = 3 * whole_read_barcode_len;
-    
-    let mut rb_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rb]} else {Vec::new()};
-    let mut rp_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rp]} else {Vec::new()};
-    
+    let mut undetermined_barcodes: HashMap<String, u32> = HashMap::new();
+    let mut ambiguous_barcodes: HashMap<String, u32> = HashMap::new();
+
+
     let thread_join_handle = if used_cpus > 1 {
         
-        let mut out_read_barcode_buffer_thread: Vec<Vec<u8>> = vec![vec![0; reqiured_output_buffer_size]; total_samples];
-        let mut out_paired_read_buffer_thread: Vec<Vec<u8>> = if single_read_input {Vec::new()} else{vec![vec![0; reqiured_output_buffer_size]; total_samples]};
-        let mut out_read_barcode_buffer_last_thread: [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
-        let mut out_paired_read_buffer_last_thread : [usize; MAX_SAMPLES] = [0; MAX_SAMPLES];
-        
-        let mut output_barcode_file_paths_thread: Vec<Option<PathBuf>> = output_barcode_file_paths.clone();
-        let mut output_paired_file_paths_thread: Vec<Option<PathBuf>>  = output_paired_file_paths.clone();
-        let mut compressor_thread =  Compressor::new(CompressionLvl::new(compression_level as i32).unwrap());
-
-        if thread_reader{
-            for _ in 0..queuelen{
-                empty_sender_rb.send(vec![0u8; buffer_size]);
-                if ! single_read_input{
-                    empty_sender_rp.send(vec![0u8; buffer_size]);    
-                }
+        for _ in 0..queuelen{
+            empty_sender_rb.send(vec![0u8; buffer_size]);
+            if ! single_read_input{
+                empty_sender_rp.send(vec![0u8; buffer_size]);    
             }
         }
+    
+        info!("Reader threads: {} threads.", if used_cpus > 1 {1} else {0});
         
-        for _ in 0..total_samples * 2{
-            empty_sender_out.send(vec![0u8; compression_buffer_size]);
-        }
-        
-
-        let mut read_rb:bool = thread_reader;
-        let mut read_rp:bool = thread_reader;
-        let mut write_1 :bool = used_cpus == 2;
-        let mut write_pool:bool = used_cpus > 2;
-        
-        let writers_threads: usize = if write_pool {used_cpus - 1 - if thread_reader {1} else {0}} else {0};
-        info!("Readers threads: {} threads.", if thread_reader {1} else {0});
-        info!("Writers threads: {} threads.", if used_cpus == 2 {1} else {writers_threads});
-        
-
-        let writers_pool: Option<ThreadPool> = if write_pool {
-            Some(ThreadPoolBuilder::new().num_threads(writers_threads).build().unwrap())
-        }else{
-            None
-        };
-
-
-        let mut reader_barcode_read = if thread_reader {
-            Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()))
-        } else {
-            None
-        };
-        
-        let mut reader_paired_read = if !single_read_input && thread_reader {
-            Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&paired_read_file_path_final).unwrap()))
-        } else {
-            None
-        };
-
-        let handle = thread::spawn(move|| {
+        let reader_threads_handle = thread::spawn(move|| {
+            let mut reader_barcode_read = if thread_reader {
+                Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()))
+            } else {
+                None
+            };
+            
+            let mut reader_paired_read = if !single_read_input && thread_reader {
+                Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&paired_read_file_path_final).unwrap()))
+            } else {
+                None
+            };
             
             let mut total_bytes:usize;
             let mut bytes:usize;
             let mut actual_sz:usize;
-            let mut curr_writer: File;
-            
+            let read_cnt: usize = 1000;
             
             loop{
                 if read_rb{
@@ -1205,7 +1169,7 @@ pub fn demultiplex(
                         Ok(mut curr_buffer) => {
                             match reader_barcode_read{
                                 Some(ref mut reader_barcode) => {
-                                    total_bytes = reading_gap_rb;
+                                    total_bytes = 0;
                                     loop{
                                         bytes = reader_barcode.read(&mut curr_buffer[total_bytes..]).unwrap();
                                         total_bytes += bytes;
@@ -1472,6 +1436,38 @@ pub fn demultiplex(
     }else {
         None
     };
+
+
+
+
+    //let mut curr_template;
+    let mut sample_id;
+    let mut barcode_read_illumina_header_start:usize = 0;
+    let mut barcode_read_illumina_header_end:usize = 0;
+    let mut read_cntr:u64 = 1;
+    let mut curr_mismatch: usize;
+    let mut latest_mismatch:usize;
+    let mut curr_umi = String::new();
+    let mut curr_barcode = String::new();
+    //let mut matching_samples: Vec<(String, u32)> = Vec::new();
+    
+    let mut all_i7_mismatches;
+    let mut all_i5_mismatches;
+    let shift = if single_read_input{0}else{1};
+
+    
+    
+    
+    let (full_sender_out, full_receiver_out) = sync_channel::<(usize, usize, u8, Vec<u8>)>(total_samples * 2);
+    let (empty_sender_out, empty_receiver_out) = sync_channel(total_samples * 2);
+    
+    let reading_gap_rp: usize = 3 * whole_paired_read_len;
+    let reading_gap_rb: usize = 3 * whole_read_barcode_len;
+    
+    let mut rb_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rb]} else {Vec::new()};
+    let mut rp_leftovers:Vec<u8> = if thread_reader {vec![0u8; reading_gap_rp]} else {Vec::new()};
+    
+    
 
     let mut reader_barcode_read = if !thread_reader{
         Some(flate2::read::MultiGzDecoder::new(std::fs::File::open(&read_barcode_file_path_final).unwrap()))

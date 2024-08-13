@@ -8,9 +8,11 @@ use chrono;
 use mgikit::*;
 use termion::terminal_size;
 use clap::{ArgAction, Command, Arg};
-use log::{info, LevelFilter};
+use log::{info, LevelFilter, error};
 use env_logger::{Builder, Target};
 use std::env; 
+use std::process;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_logo(){
@@ -537,6 +539,7 @@ fn main() {
                 )  
                                                
         )
+        .arg_required_else_help(true)
         .get_matches();
         
 
@@ -704,7 +707,7 @@ fn main() {
                 };
             },
             Some((command_nm, _)) => {
-                panic!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, template, or reformat)!", command_nm);
+                error!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, template, or reformat)!", command_nm);
             }
             None => {
                 panic!("Please enter a command to perform from (demultiplex, report, template, or reformat)!");
