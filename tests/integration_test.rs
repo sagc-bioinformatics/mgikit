@@ -196,7 +196,8 @@ fn testing_demultiplex() {
         
         let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_fc));
         let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_fc));
-        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.tsv", ds_itr_ex));
+        let ext = if ds_itr_tmp == 1 {"csv"} else {"tsv"};
+        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.{ext}", ds_itr_ex));
         let lane = String::from("L01");
         let mut instrument = String::from("instrument_1"); 
         let mut run = String::from("20231212"); 

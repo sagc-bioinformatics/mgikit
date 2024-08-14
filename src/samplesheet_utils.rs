@@ -1,6 +1,6 @@
-
 use crate::variables::*;
 use crate::sequence_utils::*;
+use core::panic;
 use std::io;
 use std::fs;
 use std::collections::{HashMap, HashSet};
@@ -107,14 +107,21 @@ pub fn parse_sample_index(
     let mut unique_sample_id: Vec<usize> = Vec::new();
     let mut dup_ids = 0;
     let mut curr_unique_id;
+    let mut delimiter = '\t';
     for line in lines {
         //println!("{}", line);
         if line.len() < 5 {
             continue;
         }
-
         if header.len() == 0{
             header = line.to_lowercase().split('\t').map(|x| x.trim().to_string()).collect();
+            if header.len() < 2{
+                header = line.to_lowercase().split(',').map(|x| x.trim().to_string()).collect();
+                delimiter = ',';
+                if header.len() < 2{
+                    panic!("Sample sheet columns should be separated by ',' or '\t'!");
+                }
+            }
             if template == "" && ! header.contains(&String::from("template")) { 
                 panic!("Template should be provided either as a general template or within the index/sample file!");
             }
@@ -136,7 +143,7 @@ pub fn parse_sample_index(
                 }                  
             }
         }else{
-            let vals: Vec<String> = line.split('\t').map(|x| x.trim().to_string()).collect();
+            let vals: Vec<String> = line.split(delimiter).map(|x| x.trim().to_string()).collect();
             curr_sample_info = Vec::with_capacity(7) ;
 
             if curr_sample_id == usize::MAX {
@@ -420,7 +427,7 @@ pub fn read_sample_sheet_into_dic(
     let mut curr_i7: usize = usize::MAX;
     let mut curr_i5: usize = usize::MAX;
     let mut i5_val: String;
-    
+    let mut delimiter = '\t';
     for line in lines {
         if line.len() < 5 {
             continue;
@@ -428,6 +435,13 @@ pub fn read_sample_sheet_into_dic(
 
         if header.len() == 0{
             header = line.to_lowercase().split('\t').map(|x| x.trim().to_string()).collect();
+            if header.len() < 2{
+                header = line.to_lowercase().split(',').map(|x| x.trim().to_string()).collect();
+                delimiter = ',';
+                if header.len() < 2{
+                    panic!("Sample sheet columns should be separated by ',' or '\t'!");
+                }
+            }
             for header_itr in 0..header.len(){
                 if header[header_itr] == "sample_id"{
                     curr_sample_id = header_itr;
@@ -447,7 +461,7 @@ pub fn read_sample_sheet_into_dic(
             }
         }else{
             
-            let vals: Vec<String> = line.split('\t').map(|x| x.trim().to_string()).collect();
+            let vals: Vec<String> = line.split(delimiter).map(|x| x.trim().to_string()).collect();
             if vals[curr_i7] == "." || vals[curr_i7].len() < 3 {
                 panic!("i7 ({}) should be longer than 3 chars!",  vals[curr_i7]);
             }
