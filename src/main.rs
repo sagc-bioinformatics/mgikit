@@ -8,9 +8,12 @@ use chrono;
 use mgikit::*;
 use termion::terminal_size;
 use clap::{ArgAction, Command, Arg};
-use log::{info, LevelFilter};
+use log::{info, LevelFilter, error};
 use env_logger::{Builder, Target};
 use std::env; 
+//use std::process;
+
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_logo(){
@@ -290,7 +293,16 @@ fn main() {
                         .action(ArgAction::SetTrue)
                         .default_value("false")
                         .help("This flag needs to be enabled if the input fastq files don't have MGI format.")
-                    ) 
+                    )
+                .arg(
+                    Arg::new("arg_threads")
+                        .long("threads")
+                        .short('t')
+                        .default_value("0")
+                        .value_parser(clap::value_parser!(usize))
+                        .help("The requested threads to be used. Default is 0 which means to use all available CPUs.")
+                )
+
         )
         .subcommand(
             Command::new("template")
@@ -573,6 +585,7 @@ fn main() {
                 let arg_all_index_error:  &bool = demultiplex_command.get_one::<bool>("arg_all_index_error").unwrap();
                 let arg_memory: &f64 = demultiplex_command.get_one::<f64>("arg_memory").unwrap();
                 let arg_not_mgi: &bool = demultiplex_command.get_one::<bool>("arg_not_mgi").unwrap();
+                let arg_threads: &usize = demultiplex_command.get_one::<usize>("arg_threads").unwrap();
                 match demultiplex(
                     arg_input_folder_path,
                     &mut arg_read1_file_path,
@@ -605,7 +618,8 @@ fn main() {
                     *arg_ignore_undetermined,
                     *arg_all_index_error,
                     *arg_memory,
-                    *arg_not_mgi
+                    *arg_not_mgi,
+                    *arg_threads
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),
@@ -648,7 +662,6 @@ fn main() {
                 );
             },
             Some(("reformat", reformat_command)) => {
-                
                 //let arg_input_folder_path: &String = reformat_command.get_one::<String>("arg_input_folder_path").unwrap();
                 let arg_read1_file_path: &String = reformat_command.get_one::<String>("arg_read1_file_path").unwrap();
                 let arg_read2_file_path: &String = reformat_command.get_one::<String>("arg_read2_file_path").unwrap();
@@ -694,7 +707,7 @@ fn main() {
                 };
             },
             Some((command_nm, _)) => {
-                panic!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, template, or reformat)!", command_nm);
+                error!("Unknown command `{}`. Please enter a command to perform from (demultiplex, report, template, or reformat)!", command_nm);
             }
             None => {
                 panic!("Please enter a command to perform from (demultiplex, report, template, or reformat)!");
@@ -704,5 +717,6 @@ fn main() {
         info!("{} seconds for performing the task.", dur.as_secs());
         info!("Exection end time: {:?}", chrono::offset::Local::now());
     }
+    
 }
 

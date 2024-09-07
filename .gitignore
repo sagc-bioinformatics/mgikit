@@ -1,4 +1,8 @@
 /target
 /.idea
-/testing_data/output*/**
+/testing_data/output/ds*/*
+/testing_data/output_thread/ds*/*
+/testing_data/output_thread_2/ds*/*
 Cargo.lock
+/testing_data/output*
+
