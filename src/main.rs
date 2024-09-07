@@ -11,7 +11,8 @@ use clap::{ArgAction, Command, Arg};
 use log::{info, LevelFilter, error};
 use env_logger::{Builder, Target};
 use std::env; 
-use std::process;
+//use std::process;
+
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -661,7 +662,6 @@ fn main() {
                 );
             },
             Some(("reformat", reformat_command)) => {
-                
                 //let arg_input_folder_path: &String = reformat_command.get_one::<String>("arg_input_folder_path").unwrap();
                 let arg_read1_file_path: &String = reformat_command.get_one::<String>("arg_read1_file_path").unwrap();
                 let arg_read2_file_path: &String = reformat_command.get_one::<String>("arg_read2_file_path").unwrap();
@@ -717,5 +717,6 @@ fn main() {
         info!("{} seconds for performing the task.", dur.as_secs());
         info!("Exection end time: {:?}", chrono::offset::Local::now());
     }
+    
 }
 
