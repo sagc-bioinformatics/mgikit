@@ -290,7 +290,13 @@ fn main() {
                         .action(ArgAction::SetTrue)
                         .default_value("false")
                         .help("This flag needs to be enabled if the input fastq files don't have MGI format.")
-                    ) 
+                    )
+                .arg(
+                    Arg::new("arg_umi_out")
+                        .long("umi-out")
+                        .default_value("HEADER")
+                        .help("Location of UMI in the output fastq. Default is \"HEADER\", where UMI will be written to the read header. Other options are (R2S, R2E, R1S and R1E).")
+                )
         )
         .subcommand(
             Command::new("template")
@@ -573,6 +579,7 @@ fn main() {
                 let arg_all_index_error:  &bool = demultiplex_command.get_one::<bool>("arg_all_index_error").unwrap();
                 let arg_memory: &f64 = demultiplex_command.get_one::<f64>("arg_memory").unwrap();
                 let arg_not_mgi: &bool = demultiplex_command.get_one::<bool>("arg_not_mgi").unwrap();
+                let arg_umi_out: &String = demultiplex_command.get_one::<String>("arg_umi_out").unwrap();
                 match demultiplex(
                     arg_input_folder_path,
                     &mut arg_read1_file_path,
@@ -605,7 +612,8 @@ fn main() {
                     *arg_ignore_undetermined,
                     *arg_all_index_error,
                     *arg_memory,
-                    *arg_not_mgi
+                    *arg_not_mgi,
+                    arg_umi_out
                 ) {
                     Ok(_) => {},
                     Err(err) => eprintln!("Error: {}", err),

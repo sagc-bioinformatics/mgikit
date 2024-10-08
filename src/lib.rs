@@ -683,7 +683,8 @@ pub fn demultiplex(
     ignore_undetermined:bool,
     all_index_error:bool,
     memory:f64,
-    not_mgi:bool
+    not_mgi:bool,
+    umi_out: &String,
 ) -> Result<(), Box<dyn Error>> {
     
     // Validate and prepare input data and parameters.
@@ -752,6 +753,11 @@ pub fn demultiplex(
     }
 
     info!("Trim Barcode: {}", trim_barcode);
+    if [String::from("HEADER"), String::from("R2S") /*, "R2E", "R1S", "R1E"*/].contains(umi_out){
+        info!("UMI will be written to: {}", umi_out);    
+    }else{
+        panic!("--umi-out parameter must be one of teh following values [\"HEADER\", \"R2S\", \"R2E\", \"R1S\", \"R1E\"]");
+    }
     // writing_threshold: usize, read_merging_threshold
     let writing_buffer_size: usize;
     
@@ -880,9 +886,6 @@ pub fn demultiplex(
     info!("The length of the read with barcode is: {}", barcode_read_length);
     info!("The length of the paired read is: {}", paired_read_length);
     //println!("ZZLENGTH {}  -  {}", whole_paired_read_len, whole_read_barcode_len);
-    
-
-       
     
     
     // parse sample/index file and get all mismatches
@@ -1093,6 +1096,7 @@ pub fn demultiplex(
     let mut curr_mismatch: usize;
     let mut latest_mismatch:usize;
     let mut curr_umi = String::new();
+    let mut curr_umi_qs = String::new();
     let mut curr_barcode = String::new();
     //let mut matching_samples: Vec<(String, u32)> = Vec::new();
     let mut undetermined_barcodes: HashMap<String, u32> = HashMap::new();
@@ -1263,7 +1267,17 @@ pub fn demultiplex(
                 
                                                             if illumina_format {
                                                                 if extract_umi {
+                                                                    curr_umi_qs = 
+                                                                            unsafe {
+                                                                                String::from_utf8_unchecked(buffer_2[(read_end 
+                                                                                - indexes_info[8]
+                                                                                )
+                                                                                ..(read_end 
+                                                                                    - indexes_info[8]
+                                                                                    + indexes_info[7]
+                                                                                    )].to_vec())};
                                                                     curr_umi = String::from(":");
+                                                                    
                                                                     if i7_rc {
                                                                         curr_umi.push_str(
                                                                             &reverse_complement(
@@ -1292,6 +1306,7 @@ pub fn demultiplex(
                                                                                     + indexes_info[7]
                                                                                     - 1)].to_vec())}
                                                                         );
+
                                                                     }
                                                                 }
                                                             }
@@ -1331,13 +1346,11 @@ pub fn demultiplex(
                                         };
                                     if extract_umi {
                                         curr_umi = String::from(":");
-                                        curr_umi.push_str(
-                                            &unsafe {
-                                                String::from_utf8_unchecked(buffer_2[(plus_start - indexes_info[8] - 1)
-                                                ..(plus_start - indexes_info[8]
-                                                    + indexes_info[7]
-                                                    - 1)].to_vec())}
-                                        );
+                                        curr_umi_qs = unsafe {
+                                            String::from_utf8_unchecked(buffer_2[(read_end - indexes_info[8])
+                                            ..(read_end - indexes_info[8]
+                                                + indexes_info[7]
+                                                )].to_vec())};
                                         if i7_rc {
                                             curr_umi.push_str(
                                                 &reverse_complement(
@@ -1352,6 +1365,15 @@ pub fn demultiplex(
                                                 )
                                                 .unwrap(),
                                             );
+                                        }else{
+                                            curr_umi.push_str(
+                                                &unsafe {
+                                                    String::from_utf8_unchecked(buffer_2[(plus_start - indexes_info[8] - 1)
+                                                    ..(plus_start - indexes_info[8]
+                                                        + indexes_info[7]
+                                                        - 1)].to_vec())}
+                                            );
+                                            
                                         }
                                     }
                                 }
@@ -1601,28 +1623,56 @@ pub fn demultiplex(
                 copy_from_slice(&illumina_header_prefix[..]);
                 curr_buffer_end += illumina_header_prefix.len();
     
-                curr_buffer_end = write_illumina_header(&mut out_read_barcode_compression_buffer, 
-                    curr_buffer_end, &buffer_2[header_start..seq_start], 
-                                        &curr_umi.as_bytes(), l_position, seq_start - header_start - 3, false);
-               
+                curr_buffer_end = if umi_out == "HEADER" {
+                    write_illumina_header(&mut out_read_barcode_compression_buffer, 
+                        curr_buffer_end, &buffer_2[header_start..seq_start], 
+                                        &curr_umi.as_bytes(), l_position, seq_start - header_start - 3, false)
+                    }else{
+                        write_illumina_header(&mut out_read_barcode_compression_buffer, 
+                            curr_buffer_end, &buffer_2[header_start..seq_start], 
+                                            &Vec::new(), l_position, seq_start - header_start - 3, false)
+                };    
                 out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + curr_barcode.len()]
                     .copy_from_slice(&curr_barcode.as_bytes());
+                
                 curr_buffer_end += curr_barcode.len();
                 barcode_read_illumina_header_end = curr_buffer_end;
                 header_start = seq_start - 1; 
-            }        
-            
-                        
-            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
+            }
+
+            if umi_out == "R2S" && curr_umi.len() > 0
+            {   
+                out_read_barcode_compression_buffer[curr_buffer_end] = b'\n';
+                curr_buffer_end += 1;
+                out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + curr_umi.len() - 1].
+                copy_from_slice(&curr_umi.as_bytes()[1..]);
+                curr_buffer_end += curr_umi.len() - 1;
+                if illumina_format 
+                    {header_start += 1;}
+            }
+
+            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + plus_start - header_start - writen_barcode_length - 1].
                 copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
     
             curr_buffer_end += plus_start - header_start - writen_barcode_length - 1;
-                    
-            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
-                        copy_from_slice(&buffer_2[plus_start - 1..read_end - writen_barcode_length]);
+            
+            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + qual_start - plus_start + 1].
+                        copy_from_slice(&buffer_2[plus_start - 1..qual_start]);
+            curr_buffer_end += qual_start - plus_start + 1;
+            
+            if umi_out == "R2S" && curr_umi.len() > 0
+            {   
+                out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + curr_umi_qs.len()].
+                copy_from_slice(&curr_umi_qs.as_bytes());
+                curr_buffer_end += curr_umi_qs.len();
+            }
+            
+            out_read_barcode_compression_buffer[curr_buffer_end..curr_buffer_end + read_end - qual_start - writen_barcode_length].
+                        copy_from_slice(&buffer_2[qual_start..read_end - writen_barcode_length]);
                 
-            curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
-            out_read_barcode_compression_buffer[curr_buffer_end - 1] = b'\n';
+            curr_buffer_end += read_end - writen_barcode_length - qual_start; 
+            out_read_barcode_compression_buffer[curr_buffer_end] = b'\n';
+            curr_buffer_end += 1;
             out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end;
 
             if curr_buffer_end >= curr_buffer_limit{
