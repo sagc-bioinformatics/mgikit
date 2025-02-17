@@ -1,6 +1,6 @@
 [package]
 name = "mgikit"
-version = "1.0.0-beta"
+version = "1.0.0"
 edition = "2021"
 authors = ["Ziad Al Bkhetan <ziad.albkhetan@gmail.com>"]
 repository = "https://github.com/sagc-bioinformatics/mgikit"
