@@ -731,39 +731,83 @@ fn fill_send_buffers<R: Read>(full_sender:& SyncSender<(usize, Vec<u8>, Memchr)>
     return true; 
 }
 
-fn compress_and_write(compression_buffer: &mut Vec<Vec<u8>>, 
-                      compression_buffer_end: usize,
-                      compressor: &mut Compressor,
-                      out_buffer_arc: &Arc<Mutex<Vec<Vec<u8>>>>,
-                      out_buffer_last_arc: &Arc<Mutex<[usize; MAX_SAMPLES]>>,
-                      output_file_paths: &Vec<Option<PathBuf>>,
-                      curr_writing_sample: usize,
-                      final_writing_buffer_size: usize,
-                    ){
-    
-    let mut out_buffer_last = out_buffer_last_arc.lock().unwrap();
-    let mut out_buffer = out_buffer_arc.lock().unwrap();
-    
-    let actual_sz = compressor.gzip_compress(&compression_buffer[curr_writing_sample][0..compression_buffer_end],
-        &mut out_buffer[curr_writing_sample][out_buffer_last[curr_writing_sample]..]).unwrap();
-    out_buffer_last[curr_writing_sample] += actual_sz;
 
-    if out_buffer_last[curr_writing_sample] >= final_writing_buffer_size {
-        match &output_file_paths[curr_writing_sample]{
-            Some(output_file_path) => {
-                let mut curr_writer = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(output_file_path)
-                .expect("couldn't create output");
-                curr_writer.write_all(&out_buffer[curr_writing_sample][..out_buffer_last[curr_writing_sample]]).unwrap();
-                curr_writer.flush().expect("couldn't flush output");
-                out_buffer_last[curr_writing_sample] = 0;
-            },
-            None => panic!("expeted a writer, but None found!")
-        };
-    }       
+fn compress_buffer(source: &Vec<u8>, 
+    source_size: usize,
+    destination: &mut Vec<u8>,
+    destination_size: usize,
+    compressor: &mut Compressor,
+  ) -> usize{
+    if source_size > 0{
+        return destination_size + compressor.gzip_compress(&source[0..source_size],
+            &mut destination[destination_size..]).unwrap();   
+    }
+    return destination_size;     
+}
+
+fn compress_and_write(compression_buffer_1: &mut Vec<Vec<u8>>, 
+        buffer_end_1: &mut [usize; MAX_SAMPLES],
+        compression_buffer_2: &mut Vec<Vec<u8>>, 
+        buffer_end_2: &mut [usize; MAX_SAMPLES],
+        out_buffer_1_arc: &Arc<Mutex<Vec<Vec<u8>>>>,
+        out_buffer_last_1_arc: &Arc<Mutex<[usize; MAX_SAMPLES]>>,
+        out_buffer_2_arc: &Arc<Mutex<Vec<Vec<u8>>>>,
+        out_buffer_last_2_arc: &Arc<Mutex<[usize; MAX_SAMPLES]>>,
+        curr_writing_sample: usize,
+        compressor: &mut Compressor,
+        output_file_1_paths: &Vec<Option<PathBuf>>,
+        output_file_2_paths: &Vec<Option<PathBuf>>,
+        writing_threshold: usize
+  ){
+
+    let mut out_buffer_1_last = out_buffer_last_1_arc.lock().unwrap();
+    let mut out_buffer_1 = out_buffer_1_arc.lock().unwrap();
+    let mut out_buffer_2_last = out_buffer_last_2_arc.lock().unwrap();
+    let mut out_buffer_2 = out_buffer_2_arc.lock().unwrap();
+
+    out_buffer_1_last[curr_writing_sample] = compress_buffer(&compression_buffer_1[curr_writing_sample], 
+        buffer_end_1[curr_writing_sample], 
+        &mut out_buffer_1[curr_writing_sample],
+        out_buffer_1_last[curr_writing_sample],
+        compressor);
+    buffer_end_1[curr_writing_sample] = 0;
+
+    out_buffer_2_last[curr_writing_sample] = compress_buffer(&compression_buffer_2[curr_writing_sample], 
+        buffer_end_2[curr_writing_sample], 
+        &mut out_buffer_2[curr_writing_sample],
+        out_buffer_2_last[curr_writing_sample],
+        compressor);
+    buffer_end_2[curr_writing_sample] = 0;
     
+    if out_buffer_1_last[curr_writing_sample] > writing_threshold {
+        write_data(&out_buffer_1[curr_writing_sample], out_buffer_1_last[curr_writing_sample], &output_file_1_paths[curr_writing_sample]);
+        out_buffer_1_last[curr_writing_sample] = 0;
+    }
+
+    if out_buffer_2_last[curr_writing_sample] > writing_threshold {
+        write_data(&out_buffer_2[curr_writing_sample], out_buffer_2_last[curr_writing_sample], &output_file_2_paths[curr_writing_sample]);
+        out_buffer_2_last[curr_writing_sample] = 0;
+    }
+
+}
+
+fn write_data(out_buffer: &Vec<u8>,
+    buffer_size: usize,
+    output_file_path: &Option<PathBuf>,
+  ){
+
+    match output_file_path{
+        Some(output_file_path) => {
+            let mut curr_writer = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(output_file_path)
+            .expect("couldn't create output");
+            curr_writer.write_all(&out_buffer[..buffer_size]).unwrap();
+            curr_writer.flush().expect("couldn't flush output");
+        },
+        None => panic!("expeted a writer, but None found!")
+    };
 }
 
 fn get_channel_buffers(receiver_arc: & Arc<Mutex<Receiver<(usize, Vec<u8>, Memchr)>>>) -> (usize, Vec<u8>){
@@ -865,13 +909,13 @@ fn process_buffer(all_index_allowed_mismatches: usize,
     let mut seq_start_pr: usize = 0;
     let mut plus_start_pr: usize = 0;
     let mut qual_start_pr: usize = 0;
-    let mut curr_buffer_end;
     let mut template_itr:usize;
     
     let mut curr_writing_sample:usize;
     
     let mut undertmined_threshold_check = u64::MAX;
-
+    let mut curr_buffer_end_b: usize;
+    let mut curr_buffer_end_p: usize;
     let mut reached_an_end = false;
     let mut i7_rc;
     let mut read_cntr: u64 = 0;
@@ -884,7 +928,7 @@ fn process_buffer(all_index_allowed_mismatches: usize,
     let total_samples:usize = sample_information.len();
     let shift = if single_read_input{0}else{1};
     let check_content = true;
-
+    
     loop {
         //info!("Read: {}", read_cntr);
         seq_start = match lines_rb.next() {
@@ -1266,61 +1310,71 @@ fn process_buffer(all_index_allowed_mismatches: usize,
             sample_mismatches[sample_id][curr_mismatch + 1] += 1;
                     
             curr_writing_sample = writing_samples[sample_id];
-            curr_buffer_end = out_read_barcode_compression_buffer_last[curr_writing_sample];
-            
             // writing preperation
             // this works for mgi format and unde and ambig and ilumina with a bit of extr
-            if curr_buffer_end + extra_space >= compression_buffer_size {              
+            if out_read_barcode_compression_buffer_last[curr_writing_sample] + extra_space >= compression_buffer_size ||
+            (!single_read_input && out_paired_read_compression_buffer_last[curr_writing_sample] + extra_space >= compression_buffer_size)  {              
                 compress_and_write(out_read_barcode_compression_buffer, 
-                curr_buffer_end,
-                                &mut compressor, &out_read_barcode_buffer_arc, 
-                &out_read_barcode_buffer_last_arc, 
-                &output_barcode_file_paths, curr_writing_sample, final_writing_buffer_size);
-                curr_buffer_end = 0;
-
+                    out_read_barcode_compression_buffer_last,
+                out_paired_read_compression_buffer, 
+                        out_paired_read_compression_buffer_last,
+                        &out_read_barcode_buffer_arc, 
+                &out_read_barcode_buffer_last_arc,
+                &out_paired_read_buffer_arc, 
+                &out_paired_read_buffer_last_arc,
+                                curr_writing_sample,
+                                &mut compressor,
+                                &output_barcode_file_paths,
+                                &output_paired_file_paths,
+                            final_writing_buffer_size);
+                curr_buffer_end_b = 0;
+                curr_buffer_end_p = 0;
+            }else{
+                curr_buffer_end_b = out_read_barcode_compression_buffer_last[curr_writing_sample];
+                curr_buffer_end_p = out_paired_read_compression_buffer_last[curr_writing_sample];
             }
     
     
             if sample_id >= undetermined_label_id{
-                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - header_start + 1].
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b..curr_buffer_end_b + read_end - header_start + 1].
                         copy_from_slice(&buffer_2[header_start..read_end + 1]);
             
                 
-                out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end + read_end - header_start + 1;
+                out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end_b + read_end - header_start + 1;
                 
             }else if read2_has_sequence
             {
                 if illumina_format{
                     // Illumina format write the heder and skip the header for mgi.
-                    barcode_read_illumina_header_start = curr_buffer_end;
-                    out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
+                    barcode_read_illumina_header_start = curr_buffer_end_b;
+                    out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b..curr_buffer_end_b + illumina_header_prefix.len()].
                     copy_from_slice(&illumina_header_prefix[..]);
-                    curr_buffer_end += illumina_header_prefix.len();
+                    curr_buffer_end_b += illumina_header_prefix.len();
         
-                    curr_buffer_end = write_illumina_header(&mut out_read_barcode_compression_buffer[curr_writing_sample], 
-                        curr_buffer_end, &buffer_2[header_start..seq_start], 
+                    curr_buffer_end_b = write_illumina_header(&mut out_read_barcode_compression_buffer[curr_writing_sample], 
+                        curr_buffer_end_b, &buffer_2[header_start..seq_start], 
                                             &curr_umi.as_bytes(), l_position, seq_start - header_start - 3, false);
                 
-                    out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
+                    out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b..curr_buffer_end_b + curr_barcode.len()]
                         .copy_from_slice(&curr_barcode.as_bytes());
-                    curr_buffer_end += curr_barcode.len();
-                    barcode_read_illumina_header_end = curr_buffer_end;
+                    curr_buffer_end_b += curr_barcode.len();
+                    barcode_read_illumina_header_end = curr_buffer_end_b;
                     header_start = seq_start - 1; 
                 }        
                 
-                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  plus_start - header_start - writen_barcode_length - 1].
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b..curr_buffer_end_b +  plus_start - header_start - writen_barcode_length - 1].
                     copy_from_slice(&buffer_2[header_start..plus_start - writen_barcode_length - 1]);
         
-                curr_buffer_end += plus_start - header_start - writen_barcode_length - 1;
+                curr_buffer_end_b += plus_start - header_start - writen_barcode_length - 1;
                         
-                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end - plus_start - writen_barcode_length + 1].
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b..curr_buffer_end_b + read_end - plus_start - writen_barcode_length + 1].
                             copy_from_slice(&buffer_2[plus_start - 1..read_end - writen_barcode_length]);
                     
-                curr_buffer_end += read_end - writen_barcode_length - plus_start + 2; 
-                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end - 1] = b'\n';
-                out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end;
+                curr_buffer_end_b += read_end - writen_barcode_length - plus_start + 2; 
+                out_read_barcode_compression_buffer[curr_writing_sample][curr_buffer_end_b - 1] = b'\n';
+                out_read_barcode_compression_buffer_last[curr_writing_sample] = curr_buffer_end_b;
     
-                if curr_buffer_end >= compression_buffer_size{
+                if curr_buffer_end_b >= compression_buffer_size{
                     // remove if it does not happen again!
                     panic!("R2 exceeds the buffer limit! somthing wrong with writing to the buffers!");
                 }
@@ -1328,48 +1382,36 @@ fn process_buffer(all_index_allowed_mismatches: usize,
             }
             
             if ! single_read_input{
-                curr_buffer_end = out_paired_read_compression_buffer_last[curr_writing_sample];
-                if curr_buffer_end + extra_space >= compression_buffer_size{                
-                    
-                    compress_and_write(out_paired_read_compression_buffer, 
-                        curr_buffer_end, 
-                        &mut compressor, &out_paired_read_buffer_arc, &out_paired_read_buffer_last_arc, 
-                        &output_paired_file_paths, curr_writing_sample, final_writing_buffer_size);
-
-                    curr_buffer_end = 0;
-                }
-    
                 if illumina_format && sample_id < undetermined_label_id{
                     
                     if read2_has_sequence{
-                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
+                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end_p..curr_buffer_end_p +  barcode_read_illumina_header_end - barcode_read_illumina_header_start].
                         copy_from_slice(&out_read_barcode_compression_buffer[curr_writing_sample][barcode_read_illumina_header_start..barcode_read_illumina_header_end]);
-                        curr_buffer_end += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
-                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
+                        curr_buffer_end_p += barcode_read_illumina_header_end - barcode_read_illumina_header_start;
+                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end_p - curr_barcode.len() - 6] = buffer_1[seq_start_pr - 2];
                     }else{
     
-                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + illumina_header_prefix.len()].
+                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end_p..curr_buffer_end_p + illumina_header_prefix.len()].
                         copy_from_slice(&illumina_header_prefix[..]);
-                        curr_buffer_end += illumina_header_prefix.len();
+                        curr_buffer_end_p += illumina_header_prefix.len();
         
-                        curr_buffer_end = write_illumina_header(&mut out_paired_read_compression_buffer[curr_writing_sample], 
-                            curr_buffer_end, &buffer_1[header_start_pr..seq_start_pr], 
+                        curr_buffer_end_p = write_illumina_header(&mut out_paired_read_compression_buffer[curr_writing_sample], 
+                            curr_buffer_end_p, &buffer_1[header_start_pr..seq_start_pr], 
                                                 &curr_umi.as_bytes(), l_position, seq_start_pr - header_start_pr - 3, false);
                     
-                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + curr_barcode.len()]
+                        out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end_p..curr_buffer_end_p + curr_barcode.len()]
                             .copy_from_slice(&curr_barcode.as_bytes());
-                        curr_buffer_end += curr_barcode.len();
+                        curr_buffer_end_p += curr_barcode.len();
     
                     }
                     
                     header_start_pr = seq_start_pr - 1;
                 }
     
-                
-                out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end..curr_buffer_end + read_end_pr - header_start_pr + 1].
+                out_paired_read_compression_buffer[curr_writing_sample][curr_buffer_end_p..curr_buffer_end_p + read_end_pr - header_start_pr + 1].
                     copy_from_slice(&buffer_1[header_start_pr..read_end_pr + 1]);
                     
-                out_paired_read_compression_buffer_last[curr_writing_sample] = curr_buffer_end + read_end_pr - header_start_pr + 1;
+                out_paired_read_compression_buffer_last[curr_writing_sample] = curr_buffer_end_p + read_end_pr - header_start_pr + 1;
                 
                 if out_paired_read_compression_buffer_last[curr_writing_sample] >= compression_buffer_size{
                     // remove if it does not happen again!
@@ -1720,28 +1762,22 @@ fn demultipexing_process(parallel_reader:bool,
             }
         }
         //println!("3- {}  -  {}  -  {}  -  {}", read_bytes_1, header_start_pr, read_bytes_2, header_start);
-           
-            
     }
 
     for curr_writing_sample in 0..total_samples{
-        if  out_read_barcode_compression_buffer_last[curr_writing_sample] > 0 {              
-            compress_and_write(&mut out_read_barcode_compression_buffer, 
-                out_read_barcode_compression_buffer_last[curr_writing_sample],
-                            &mut compressor, &out_read_barcode_buffer_arc, 
-            &out_read_barcode_buffer_last_arc, 
-            &output_barcode_file_paths, curr_writing_sample, final_writing_buffer_size);
-        }
-        if ! single_read_input{
-            if out_paired_read_compression_buffer_last[curr_writing_sample] > 0{                
-                
-                compress_and_write(&mut out_paired_read_compression_buffer, 
-                    out_paired_read_compression_buffer_last[curr_writing_sample], 
-                    &mut compressor, &out_paired_read_buffer_arc, &out_paired_read_buffer_last_arc, 
-                    &output_paired_file_paths, curr_writing_sample, final_writing_buffer_size);
-            }
-        }
-
+        compress_and_write(&mut out_read_barcode_compression_buffer, 
+                    &mut out_read_barcode_compression_buffer_last,
+                    &mut out_paired_read_compression_buffer, 
+                    &mut out_paired_read_compression_buffer_last,
+                        &out_read_barcode_buffer_arc, 
+                &out_read_barcode_buffer_last_arc,
+                &out_paired_read_buffer_arc, 
+                &out_paired_read_buffer_last_arc,
+                                curr_writing_sample,
+                                &mut compressor,
+                                &output_barcode_file_paths,
+                                &output_paired_file_paths,
+                            0);
     } 
     
     
