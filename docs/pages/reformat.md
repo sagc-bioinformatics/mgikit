@@ -8,9 +8,16 @@ type: guides
 
 ## Introduction
 
-This functionality is performed with the command `reformat`. It is to reformat reads demultiplexed by `splitBarcode` tool provided by MGI into illumia format and generates quality reports explained at [mgikit reports page](/mgikit/demultiplex#demultipexing-reports-section).
+This functionality is performed with the command `reformat`. It is to reformat reads demultiplexed by `splitBarcode` tool or raw fastq provided by MGI into illumia format and generates quality reports explained at [mgikit reports page](/mgikit/demultiplex#demultipexing-reports-section).
 
 This command should be used for each sample separately (either paired-end or single-end). if you have multiple samples, you need to process each of them individually.
+
+## Considerations
+
+- If the sample barcode available in the read header (header ends with `*:N:0:********`). this barcode will be used.
+- In case raw data provided and no barcode information, if the user provide sample barcode, it will be written into the header.
+- If the user does not provide sample barcode or the reads don't include the sample barcode in the header, there will be no mismatches considered in the quality reports.
+- If the data does not fit MGI format or splitBarcode outputs, the reformat might not be relaiable.
 
 ## Command arguments
 
@@ -57,8 +64,6 @@ This command should be used for each sample separately (either paired-end or sin
 
 - **`--force`**: this flag is to force the run and overwrite the existing output directory if exists.
 
-- **`--flexible`**: By default, the tool will calculate the length of the first read and its all parts and use this information in the analysis for a quicker determination of the read boundaries. `--flexible` option, will make the tool determine the read boundaries based on the `new line` character (`\n`).
-
 - **`--info-file`**: The name of the info file that contains the run information. Only needed when using the `--input` parameter. [default: BioInfo.csv]
 
 - **`--disable-illumina`**: reads will be left as is and only quality reports will be generated.
@@ -70,6 +75,8 @@ This command should be used for each sample separately (either paired-end or sin
 - **`--sample-index`**: The index of the sample in the sample sheet. It is required for file naming. [default: 1]
 
 - **`--barcode`**: The barcode of the specific sample to calculate the mismatches for the reports. If not provided, no mismatches will be calculated.
+
+- **`--validate`**: when enabled, the tool will validate the content of the input fastq files.
 
 ## Usage Examples
 

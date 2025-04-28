@@ -1,0 +1,2 @@
+job_number	sample_id	r1_qc_30	r2_qc_30	r3_qc_30	r1_bases	r2_bases	r3_bases	r1_qc	r2_qc	r3_qc	all_reads	0-mismatches
+.	test-sample	167	0	0	200	200	0	6162	5600	0	4	4

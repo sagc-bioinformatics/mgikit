@@ -107,7 +107,7 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 - **`--undetermined-label`**: The default value is `Undetermined`. The label of the file that contains the
   undermined reads which could not be assigned to any samples.
 
-- **`--ambiguous-label`**: The default value is `ambiguous`. The label of the file that contains the ambiguous reads.
+- **`--ambiguous-label`**: The default value is `Ambiguous`. The label of the file that contains the ambiguous reads.
   The ambiguous reads are the reads that can be assigned to multiple samples. This can happen when
   the number of allowed mismatches is high.
 
@@ -125,8 +125,6 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 
 - **`--force`**: this flag is to force the run and overwrite the existing output directory if exists.
 
-- **`--flexible`**: By default, the tool will calulate the length of the first read and its all parts and use this information in the analysis for a quicker determination of the read boundaries. `--flexible` option, will make the tool determine the read boundaries based on the `new line` character (`\n`).
-
 - **`--ignore-undetermined`**: By default, the tool will stop if many reads were undetermined. using this parameter, will make the tool give a warning one this issue but keep demultiplexing.
 
 - **`--all-index-error`**: By default, the allowed mismatches `-m or --mismatches` are considered to be per index. This flag will make it for the total mismatches across all indices.
@@ -135,14 +133,20 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 
 - **`--not-mgi`**: This flag needs to be enabled if the input fastq files don't have MGI format.
 
+- **`--threads` or `-t`**: The number of threads to be utilised. By default, it uses all available cpus..
+
+- **`--mgi-full-header`**: when enabled, the tool will write sample barcodes and UMI to the read header when using MGI format, by default it will not.
+
+- **`--validate`**: when enabled, the tool will validate the content of the input fastq files.
+
 ### Understanding input files
 
 MGI sequencing machine output a directory for the run (flowcell_id) with a subdirectory for each lane (L01, L02 ..) depending on the machine.
 The input fastq files can be provided to the tool in two ways:
 
-1.  Using `-f` and `-r` parameters which will be referring to the path to `R1` and `R2` respectively for paired-end or `-f` for single end fastq.
+1. Using `-f` and `-r` parameters which will be referring to the path to `R1` and `R2` respectively for paired-end or `-f` for single end fastq.
 
-2.  Using `-i` or `--input` parameter which refers to the path to the lane subdirectory in the sequencing output directory (or the directory that contains the fastq files if the data is obtained from somewhere else). In this case, the tool will search for the file that ends with `_read_1.fq.gz` and `_read_2.fq.gz` as forward and reverse reads respectively and if no reverse read file is found, the tool considers the run as a single end run. These suffixes can be also customised using the parameters (`--r1-file-suf` and `--r2-file-suf`).
+2. Using `-i` or `--input` parameter which refers to the path to the lane subdirectory in the sequencing output directory (or the directory that contains the fastq files if the data is obtained from somewhere else). In this case, the tool will search for the file that ends with `_read_1.fq.gz` and `_read_2.fq.gz` as forward and reverse reads respectively and if no reverse read file is found, the tool considers the run as a single end run. These suffixes can be also customised using the parameters (`--r1-file-suf` and `--r2-file-suf`).
 
 ### Sample sheet format and preparation.
 

@@ -67,3 +67,9 @@ cargo build --release
 ## Commerical Use
 
 Please contact us if you want to use the software for commercial purposes.
+
+## Citation
+
+If you use mgikit in your resear ch, please cite the following publication:
+
+> Al Bkhetan, Ziad, and Sen Wang. ["mgikit: demultiplexing toolkit for MGI fastq files."](https://academic.oup.com/bioinformatics/article/40/9/btae554/7755041) Bioinformatics 40.9 (2024): btae554.
