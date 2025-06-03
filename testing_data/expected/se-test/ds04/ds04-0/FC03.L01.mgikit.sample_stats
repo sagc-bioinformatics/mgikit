@@ -1,0 +1,6 @@
+job_number	sample_id	r1_qc_30	r2_qc_30	r3_qc_30	r1_bases	r2_bases	r3_bases	r1_qc	r2_qc	r3_qc	all_reads	0-mismatches
+.	SAM-01	0	0	0	180	0	40	2340	0	520	2	2
+.	SAM-02	0	0	0	180	0	40	2340	0	520	2	2
+.	SAM-03	0	0	0	0	0	0	0	0	0	0	0
+.	SAM-04	0	0	0	180	0	40	2340	0	520	2	2
+.	Undetermined	90	0	20	1260	0	280	18720	0	4160	14	14
