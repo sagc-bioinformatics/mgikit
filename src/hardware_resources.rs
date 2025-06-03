@@ -41,13 +41,26 @@ pub fn get_cpus(requested_threads: usize, paired_read_input: bool) -> (usize, us
             "Used CPUs are redueced to the available CPUs as the requested number is not available."
         );
     }
-    let mut reader_threads = 0;
-    if used_cpus > 1 {
-        reader_threads += 1;
+    let mut reader_threads;
+
+    if paired_read_input {
+        if used_cpus > 7 {
+            reader_threads = 4;
+        } else {
+            reader_threads = 2;
+        }
+    } else {
+        if used_cpus > 4 {
+            reader_threads = 2;
+        } else {
+            reader_threads = 1;
+        }
     }
-    if used_cpus > 4 && paired_read_input {
-        reader_threads += 1;
+
+    if reader_threads > used_cpus - 1 {
+        reader_threads = used_cpus - 1;
     }
+
     let processing_threads = used_cpus - reader_threads;
     if used_cpus > 1 {
         info!(
@@ -55,6 +68,9 @@ pub fn get_cpus(requested_threads: usize, paired_read_input: bool) -> (usize, us
             reader_threads,
             processing_threads
         );
+    }
+    if (reader_threads == 2 && !paired_read_input) || reader_threads > 2 {
+        info!("high-threads mode, Independant threads for decompression will be utilised!");
     }
 
     (reader_threads, processing_threads)
