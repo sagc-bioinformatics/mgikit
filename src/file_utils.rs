@@ -13,21 +13,33 @@ use log::debug;
 fn read_bytes_in_reads<R: Read>(
     reader: &mut R,
     buffer: &mut [u8],
-    _minimum: usize,
+    minimum: usize,
     last_byte: &mut usize
 ) -> (bool, Vec<usize>) {
     let mut curr_bytes: usize;
+    let mut lines: Vec<usize> = Vec::with_capacity(minimum * 2);
+    lines.extend(memchr_iter(b'\n', &buffer[..*last_byte]));
+        
     loop {
         //debug!("buffer length: {}, starting from {}", buffer.len(), last_byte);
         curr_bytes = reader.read(&mut buffer[*last_byte..]).unwrap();
-        if curr_bytes == 0 {
+        lines.extend(memchr_iter(b'\n', &buffer[*last_byte..*last_byte + curr_bytes]).map(|it| it + *last_byte));
+        *last_byte += curr_bytes;
+        //println!(" reads: {} - lines: {}  - curr: {}", minimum * 4, lines.len(), curr_bytes);
+        if curr_bytes == 0 || lines.len() >= minimum * 4 {
             //debug!("total lines: {} - no more", line_cnt);
             break;
         }
-        *last_byte += curr_bytes;
     }
+    //let last_10 = &lines[lines.len().saturating_sub(10)..];
+    //println!("{}  - {:?}", lines.len(), last_10);
+    //lines = Vec::new();
+    //lines.extend(memchr_iter(b'\n', &buffer[..*last_byte]).collect::<Vec<usize>>());
+    //let last_10 = &lines[lines.len().saturating_sub(10)..];
+    //println!("{}  - {:?}", lines.len(), last_10);
+    
     //debug!("total lines: {} - still more", line_cnt);
-    return (*last_byte > 0, memchr_iter(b'\n', &buffer[..*last_byte]).collect::<Vec<usize>>());
+    return (*last_byte > 0, lines);
 }
 
 pub fn fill_send_buffers<R: Read>(

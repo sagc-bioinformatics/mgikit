@@ -152,6 +152,7 @@ impl RunManager {
                     self.lane,
                     self.flowcell()
                 );
+                panic!("Missing mandatory information!");
             }
         } else {
             info!("Output format is MGI");
@@ -163,13 +164,14 @@ impl RunManager {
 
     pub fn create_illumina_header_prefix(&self) -> String {
         if self.instrument.len() == 0 || self.lane.len() == 0 || self.flowcell().len() == 0 {
-            warn!(
+            error!(
                 "Missing information for Illumina header! instrument: {}, lane: {}, flowcell: {}",
                 self.instrument,
                 self.lane,
                 self.flowcell()
             );
-            return String::new();
+            panic!("Missing mandatory information!");
+            //return String::new();
         }
         let mut header = String::from("@");
         header.push_str(&self.instrument);

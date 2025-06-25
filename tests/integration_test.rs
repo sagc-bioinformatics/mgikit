@@ -250,6 +250,7 @@ fn testing_demultiplex() {
             if comprehensive_scan{
                 my_args.push("--comprehensive-scan".to_string());
             }
+            my_args.push("--validate".to_string());
             if disable_illumina_format{
                 my_args.push("--disable-illumina".to_string());
             }
@@ -359,7 +360,7 @@ fn testing_demultiplex_not_mgi_input() {
                         
         my_args.push("--disable-illumina".to_string());
         my_args.push("--not-mgi".to_string());                
-        
+        my_args.push("--validate".to_string());
         println!("{:?}", &my_args);
 
         let output = Command::new(command)
@@ -902,7 +903,7 @@ fn testing_demultiplex_threads() {
                 my_args.push(ds_threads.to_string());
                 
             }
-
+            my_args.push("--validate".to_string());
             if ds_itr_tmp <  11{
                 my_args.push("--all-index-error".to_string());                
             }
@@ -1000,7 +1001,7 @@ fn testing_demultiplex_large() {
                         
             my_args.push("--threads".to_string());
             my_args.push(thread_cnt.to_string());
-            
+            my_args.push("--validate".to_string());
             if j == 0{
                 my_args.push("-f".to_string());
                 my_args.push(read1_file_path.to_string());
@@ -1172,6 +1173,7 @@ fn testing_single_end() {
                     my_args.push("i78:--8".to_string());
                     
                 }
+                my_args.push("--validate".to_string());
 
                 if ds_itr_tmp <  11{
                     my_args.push("--all-index-error".to_string());                
@@ -1308,6 +1310,7 @@ fn testing_mgi_full_header() {
             if ds_itr_tmp <  11{
                 my_args.push("--all-index-error".to_string());                
             }
+            my_args.push("--validate".to_string());
             println!("{:?}", &my_args);
 
 
