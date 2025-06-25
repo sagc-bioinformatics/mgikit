@@ -151,7 +151,8 @@ pub fn parallel_reader_thread(
     empty_receiver_rp: Receiver<(usize, Vec<u8>)>,
     full_sender: Sender<(usize, Vec<u8>, Vec<usize>, usize, Vec<u8>, Vec<usize>)>,
     processing_threads: usize,
-    paired_input: bool
+    paired_input: bool,
+    buffer_size: usize
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         info!("Reader thread has started!");
@@ -166,10 +167,10 @@ pub fn parallel_reader_thread(
             None
         };
 
-        let mut extra_rb: Vec<u8> = if read_rb { vec![b'0'; 1000000] } else { Vec::new() };
+        let mut extra_rb: Vec<u8> = if read_rb { vec![b'0'; buffer_size] } else { Vec::new() };
         let mut extra_len_rb: usize = 0;
 
-        let mut extra_rp: Vec<u8> = if read_rp { vec![b'0'; 1000000] } else { Vec::new() };
+        let mut extra_rp: Vec<u8> = if read_rp { vec![b'0'; buffer_size] } else { Vec::new() };
         let mut extra_len_rp: usize = 0;
 
         let mut keep_reading_rp = read_rp;

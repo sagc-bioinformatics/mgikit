@@ -615,7 +615,8 @@ fn demultiplex(
                 empty_receiver_rp.clone(),
                 full_sender.clone(),
                 processing_threads,
-                run_manager.paired_read_input()
+                run_manager.paired_read_input(),
+                BUFFER_SIZE
             )
         )
     } else {
@@ -638,7 +639,8 @@ fn demultiplex(
                 empty_receiver_rp.clone(),
                 full_sender.clone(),
                 processing_threads,
-                true
+                true,
+                BUFFER_SIZE
             )
         )
     } else {
