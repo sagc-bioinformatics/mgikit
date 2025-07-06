@@ -65,10 +65,11 @@ pub fn fill_send_buffers<R: Read>(
                 read_cnt,
                 &mut total_bytes
             );
+            //let tmp = memchr_iter(b'\n', &buffer[..total_bytes]).count();
+            //debug!("total read bytes: {}  -  lines: {}  - needed lines: {}, total_lnes_again: {}", total_bytes, lines.len(), read_cnt * 4, tmp);
             //let mut lines = memchr_iter(b'\n', &buffer[..total_bytes]);
-            //debug!("total read bytes: {}  -  lines: {}  - needed lines: {}", total_bytes, lines.count(), read_cnt * 4);
-            //let mut lines = memchr_iter(b'\n', &buffer[..total_bytes]);
-            if lines.len() > read_cnt * 4 {
+            
+            if lines.len() >= read_cnt * 4 {
                 lines.truncate(read_cnt * 4);
                 *extra_len = total_bytes - lines.last().unwrap() - 1;
                 extra[..*extra_len].copy_from_slice(
@@ -76,6 +77,8 @@ pub fn fill_send_buffers<R: Read>(
                 );
                 total_bytes = lines.last().unwrap() + 1;
             }
+            //debug!("extra length: {}  -  bytes sent: {}", extra_len, total_bytes);
+            
             //println!("reader lines: {}", lines.count());
             match full_sender.send((total_bytes, buffer, lines)) {
                 Ok(_) => {
@@ -176,6 +179,7 @@ pub fn parallel_reader_thread(
         let mut keep_reading_rp = read_rp;
         let mut readers_finished = false;
         loop {
+            //debug!("--------------------------------");
             if read_rb {
                 match reader_barcode_read {
                     Some(ref mut reader_barcode) => {

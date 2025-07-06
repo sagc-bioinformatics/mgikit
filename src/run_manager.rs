@@ -145,11 +145,12 @@ impl RunManager {
     pub fn confirm_format(&self) {
         if self.illumina_format {
             info!("Output format is Illumina");
-            if self.run.is_empty() || self.instrument.is_empty() || self.flowcell().is_empty() {
+            if self.run.is_empty() || self.instrument.is_empty() || self.flowcell().is_empty() || self.run.is_empty(){
                 error!(
-                    "Missing information for Illumina header! instrument: {}, lane: {}, flowcell: {}",
+                    "Missing information for Illumina header! instrument: {}, lane: {}, run{}, flowcell: {}",
                     self.instrument,
                     self.lane,
+                    self.run,
                     self.flowcell()
                 );
                 panic!("Missing mandatory information!");
@@ -163,11 +164,12 @@ impl RunManager {
     }
 
     pub fn create_illumina_header_prefix(&self) -> String {
-        if self.instrument.len() == 0 || self.lane.len() == 0 || self.flowcell().len() == 0 {
+        if self.instrument.is_empty() || self.lane.is_empty() || self.flowcell().is_empty() || self.run.is_empty() {
             error!(
-                "Missing information for Illumina header! instrument: {}, lane: {}, flowcell: {}",
+                "Missing information for Illumina header! instrument: {}, lane: {}, run{}, flowcell: {}",
                 self.instrument,
                 self.lane,
+                self.run,
                 self.flowcell()
             );
             panic!("Missing mandatory information!");

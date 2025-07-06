@@ -902,6 +902,8 @@ fn process_buffer(
         }
 
         if reached_an_end {
+            debug!("reached end - buffer 2 - bytes: {}  - header start: {}", buffer_2.len(), header_start);
+            debug!("reached end - buffer 1 - bytes: {}  - header start: {}", buffer_1.len(), header_start_pr);
             break;
         } else {
             i7_rc = false;
