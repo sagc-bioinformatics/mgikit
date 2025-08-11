@@ -96,13 +96,15 @@ impl SampleData {
         lane: &String,
         sample_indx: usize,
         illumina_format: bool,
-        output_dir: &PathBuf
+        output_dir: &PathBuf,
+        paired_read_input: bool
     ) {
         let (output_file_r1, output_file_r2) = create_output_file_name(
             &self.label,
             &lane,
             sample_indx,
-            illumina_format
+            illumina_format,
+            paired_read_input
         );
         //debug!("create files for sample {}: {}, {} with path {}", sample_indx, lane, illumina_format, output_dir.display());
         match self.paired_reads {
@@ -539,24 +541,28 @@ fn create_output_file_name(
     sample_name: &String,
     lane: &String,
     sample_index: usize,
-    illumina_format: bool
+    illumina_format: bool,
+    paired_read_input: bool
 ) -> (String, String) {
+
+    let br_suff = if paired_read_input{"R2"}else{"R1"};
+
     if illumina_format {
         if sample_index == usize::MAX {
             return (
                 format!("{}_{}_R1_001.fastq.gz", sample_name, lane),
-                format!("{}_{}_R2_001.fastq.gz", sample_name, lane),
+                format!("{}_{}_{}_001.fastq.gz", sample_name, lane, br_suff),
             );
         } else {
             return (
                 format!("{}_S{}_{}_R1_001.fastq.gz", sample_name, sample_index, lane),
-                format!("{}_S{}_{}_R2_001.fastq.gz", sample_name, sample_index, lane),
+                format!("{}_S{}_{}_{}_001.fastq.gz", sample_name, sample_index, lane, br_suff),
             );
         }
     } else {
         return (
             format!("{}_{}_R1.fastq.gz", sample_name, lane),
-            format!("{}_{}_R2.fastq.gz", sample_name, lane),
+            format!("{}_{}_{}.fastq.gz", sample_name, lane, br_suff),
         );
         //return (format!("{}_R1.fastq.gz", sample_name), format!("{}_R2.fastq.gz", sample_name));
     }
@@ -687,21 +693,24 @@ pub fn create_sample_data_list(
                         run_manager.lane(),
                         unique_samples_ids[i] + 1,
                         true,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                 } else if i >= undetermined_label_id && illumina_format {
                     sample_data.create_files(
                         run_manager.lane(),
                         usize::MAX,
                         true,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                 } else {
                     sample_data.create_files(
                         run_manager.lane(),
                         unique_samples_ids[i] + 1,
                         false,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                 }
             } else {
@@ -753,7 +762,8 @@ pub fn clean_output_directory(
                         run_manager.lane(),
                         unique_samples_ids[i] + 1,
                         true,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                     sample_data.delete_sample_files();
                 } else if i >= undetermined_label_id && illumina_format {
@@ -761,7 +771,8 @@ pub fn clean_output_directory(
                         run_manager.lane(),
                         usize::MAX,
                         true,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                     sample_data.delete_sample_files();
                 } else {
@@ -769,7 +780,8 @@ pub fn clean_output_directory(
                         run_manager.lane(),
                         unique_samples_ids[i] + 1,
                         false,
-                        run_manager.output_dir()
+                        run_manager.output_dir(),
+                        run_manager.paired_read_input()
                     );
                     sample_data.delete_sample_files();
                 }
