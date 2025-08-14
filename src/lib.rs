@@ -3,6 +3,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use file_utils::{
     get_buf_reader,
     get_gzip_reader,
+    parallel_reader_decompressor_thread,
     parallel_reader_thread,
     read_buffers,
     write_file,
@@ -40,7 +41,7 @@ pub use report_manager::ReportManager;
 pub use formater::{ ReformatedSample, parse_sb_file_name };
 
 const BUFFER_SIZE: usize = 1 << 22;
-const QUEUE_LENGTH: usize = 5;
+const RAW_BUFFER_SIZE: usize = 1 << 23;
 
 fn hamming_distance(bytes1: &[u8], bytes2: &[u8]) -> Result<usize, &'static str> {
     if bytes1.len() != bytes2.len() {
@@ -573,22 +574,59 @@ fn demultiplex(
         );
     }
 
-    let (full_sender_rb, full_receiver_rb) = bounded(QUEUE_LENGTH);
-    let (empty_sender_rb, empty_receiver_rb) = bounded(QUEUE_LENGTH);
-    let (full_sender_rp, full_receiver_rp) = bounded(QUEUE_LENGTH);
-    let (empty_sender_rp, empty_receiver_rp) = bounded(QUEUE_LENGTH);
-    let (full_sender, full_receiver) = bounded(QUEUE_LENGTH);
+    let (full_sender_rb, full_receiver_rb) = bounded(processing_threads * 2);
+    let (empty_sender_rb, empty_receiver_rb) = bounded(processing_threads * 2);
+    let (full_sender_rp, full_receiver_rp) = bounded(processing_threads * 2);
+    let (empty_sender_rp, empty_receiver_rp) = bounded(processing_threads * 2);
+    let (full_sender, full_receiver) = bounded(processing_threads * 2);
+
+    /*
+    empty_receiver_rb/empty_receiver_rp
+    full_sender_rb/full_sender_rp
+    full_receiver_rb/full_receiver_rp
+    full_sender
+
+    
+    workers
+    full_receiver
+    empty_sender_rb
+    empty_sender_rp
+
+
+    empty_raw_receiver_rp/empty_raw_receiver_rb
+    full_raw_sender_rp/full_raw_sender_rb
+        
+    decoder
+    full_raw_receiver_rp/full_raw_receiver_rb
+    empty_receiver_rb/empty_receiver_rp
+    full_sender_rb/full_sender_rp
+    empty_raw_sender_rb/empty_raw_sender_rp
+    full_receiver_rb/full_receiver_rp
+    full_sender
+    */
+
+    let (full_raw_sender_rb, full_raw_receiver_rb) = bounded(processing_threads * 2);
+    let (empty_raw_sender_rb, empty_raw_receiver_rb) = bounded(processing_threads * 2);
+    let (full_raw_sender_rp, full_raw_receiver_rp) = bounded(processing_threads * 2);
+    let (empty_raw_sender_rp, empty_raw_receiver_rp) = bounded(processing_threads * 2);
+
+    let mut barcode_process_master = !run_manager.paired_read_input() || reader_threads == 1;
 
     let batch_size: usize = (if run_manager.barcode_read_len() > run_manager.paired_read_len() {
         ((BUFFER_SIZE as f32) / (run_manager.barcode_read_len() as f32)) * 0.95
     } else {
+        barcode_process_master = true;
         ((BUFFER_SIZE as f32) / (run_manager.paired_read_len() as f32)) * 0.95
     }) as usize;
-
+    debug!("Barceode data reader is master reader: {}", barcode_process_master);
     let reader_handler = if reader_threads > 0 {
         info!("Parallel readers, processing batches of {} reads.", batch_size);
-        for _ in 0..QUEUE_LENGTH {
+        for _ in 0..processing_threads * 2 {
             match empty_sender_rb.send((0, vec![0u8; BUFFER_SIZE])) {
+                Ok(_) => {}
+                Err(e) => println!("0- Error Sending: {}", e),
+            }
+            match empty_raw_sender_rb.send((0, vec![0u8; RAW_BUFFER_SIZE])) {
                 Ok(_) => {}
                 Err(e) => println!("0- Error Sending: {}", e),
             }
@@ -596,53 +634,111 @@ fn demultiplex(
                 match empty_sender_rp.send((0, vec![0u8; BUFFER_SIZE])) {
                     Ok(_) => {}
                     Err(e) => println!("0- Error Sending: {}", e),
-                };
+                }
+                match empty_raw_sender_rp.send((0, vec![0u8; RAW_BUFFER_SIZE])) {
+                    Ok(_) => {}
+                    Err(e) => println!("0- Error Sending: {}", e),
+                }
             }
         }
-
-        Some(
-            parallel_reader_thread(
-                run_manager.paired_reads().clone(),
-                run_manager.barcode_reads().clone(),
-                batch_size,
-                true,
-                reader_threads == 1 && run_manager.paired_read_input(),
-                full_sender_rb.clone(),
-                full_sender_rp.clone(),
-                full_receiver_rb.clone(),
-                full_receiver_rp.clone(),
-                empty_receiver_rb.clone(),
-                empty_receiver_rp.clone(),
-                full_sender.clone(),
-                processing_threads,
-                run_manager.paired_read_input(),
-                BUFFER_SIZE
+        if
+            (reader_threads == 4 && run_manager.paired_read_input()) ||
+            (reader_threads == 2 && !run_manager.paired_read_input())
+        {
+            Some(
+                parallel_reader_decompressor_thread(
+                    run_manager.barcode_reads().clone(),
+                    batch_size,
+                    empty_raw_sender_rb,
+                    empty_raw_receiver_rb,
+                    full_raw_sender_rb,
+                    full_raw_receiver_rb,
+                    full_receiver_rb.clone(),
+                    full_receiver_rp.clone(),
+                    full_sender_rb.clone(),
+                    empty_receiver_rb.clone(),
+                    empty_sender_rb.clone(),
+                    full_sender.clone(),
+                    processing_threads,
+                    BUFFER_SIZE,
+                    run_manager.paired_read_input(),
+                    barcode_process_master
+                )
             )
-        )
+        } else {
+            Some(
+                parallel_reader_thread(
+                    run_manager.paired_reads().clone(),
+                    run_manager.barcode_reads().clone(),
+                    batch_size,
+                    true,
+                    reader_threads == 1 && run_manager.paired_read_input(),
+                    full_sender_rb.clone(),
+                    full_sender_rp.clone(),
+                    empty_sender_rb.clone(),
+                    empty_sender_rp.clone(),
+                    full_receiver_rb.clone(),
+                    full_receiver_rp.clone(),
+                    empty_receiver_rb.clone(),
+                    empty_receiver_rp.clone(),
+                    full_sender.clone(),
+                    processing_threads,
+                    BUFFER_SIZE,
+                    run_manager.paired_read_input(),
+                    barcode_process_master
+                )
+            )
+        }
     } else {
         None
     };
 
-    let reader_handler_secondary = if reader_threads == 2 {
-        Some(
-            parallel_reader_thread(
-                run_manager.paired_reads().clone(),
-                run_manager.barcode_reads().clone(),
-                batch_size,
-                false,
-                true,
-                full_sender_rb.clone(),
-                full_sender_rp.clone(),
-                full_receiver_rb.clone(),
-                full_receiver_rp.clone(),
-                empty_receiver_rb.clone(),
-                empty_receiver_rp.clone(),
-                full_sender.clone(),
-                processing_threads,
-                true,
-                BUFFER_SIZE
+    let reader_handler_secondary = if run_manager.paired_read_input() && reader_threads > 1 {
+        if reader_threads == 4 {
+            Some(
+                parallel_reader_decompressor_thread(
+                    run_manager.paired_reads().clone(),
+                    batch_size,
+                    empty_raw_sender_rp,
+                    empty_raw_receiver_rp,
+                    full_raw_sender_rp,
+                    full_raw_receiver_rp,
+                    full_receiver_rb.clone(),
+                    full_receiver_rp.clone(),
+                    full_sender_rp.clone(),
+                    empty_receiver_rp.clone(),
+                    empty_sender_rp.clone(),
+                    full_sender.clone(),
+                    processing_threads,
+                    BUFFER_SIZE,
+                    true,
+                    !barcode_process_master
+                )
             )
-        )
+        } else {
+            Some(
+                parallel_reader_thread(
+                    run_manager.paired_reads().clone(),
+                    run_manager.barcode_reads().clone(),
+                    batch_size,
+                    false,
+                    true,
+                    full_sender_rb.clone(),
+                    full_sender_rp.clone(),
+                    empty_sender_rb.clone(),
+                    empty_sender_rp.clone(),
+                    full_receiver_rb.clone(),
+                    full_receiver_rp.clone(),
+                    empty_receiver_rb.clone(),
+                    empty_receiver_rp.clone(),
+                    full_sender.clone(),
+                    processing_threads,
+                    BUFFER_SIZE,
+                    true,
+                    !barcode_process_master
+                )
+            )
+        }
     } else {
         None
     };
@@ -1612,10 +1708,40 @@ pub fn initiate_demultiplexing(demultiplex_command: &ArgMatches) {
     if 0.0 < arg_memory && arg_memory <= 0.5 {
         panic!("Requested memory should be greater than 0.5 GB!");
     }
-    let (reader_threads, processing_threads) = get_cpus(
+    
+    let mut tmp_reader_threads = *demultiplex_command.get_one::<usize>("arg_threads_r").unwrap();
+    let mut tmp_processing_threads = *demultiplex_command.get_one::<usize>("arg_threads_w").unwrap();
+    
+    let (reader_threads, processing_threads) = if tmp_processing_threads > 0 && tmp_reader_threads > 0 {
+        if run_manager.paired_read_input(){
+            if tmp_reader_threads > 4 {
+                warn!("Reader threads can not be more than 4!");
+                tmp_reader_threads = 4;
+            }else if tmp_reader_threads == 3 {
+                warn!("Reader threads shoyuld be either 0, 1, 2, or 4!");
+                tmp_reader_threads = 2;
+            }
+        }else{
+            if tmp_reader_threads > 2{
+                warn!("Reader threads can not be more than 2 for single end input!");
+                tmp_reader_threads = 2;
+            }
+        }
+        info!("Reader threads ({}) and processing threads ({}) will be used!", 
+            tmp_reader_threads, 
+            tmp_processing_threads
+        );
+        (tmp_reader_threads, tmp_processing_threads)
+    }else
+    {
+        get_cpus(
         *demultiplex_command.get_one::<usize>("arg_threads").unwrap(),
-        run_manager.paired_read_input()
-    );
+            run_manager.paired_read_input()
+        )
+    };
+
+
+
     let max_buffer_size = calculate_largest_buffer_size(
         get_available_memory(arg_memory),
         sample_manager.get_sample_count(),
@@ -2162,8 +2288,8 @@ pub fn reformat(reformat_command: &ArgMatches) -> Result<(), Box<dyn Error>> {
 
     let sample_lockes = vec![Mutex::new(false), Mutex::new(false), Mutex::new(false)];
     let samples_locks_arc = Arc::new(sample_lockes);
-    let (empty_sender_dummy, _) = bounded(QUEUE_LENGTH);
-    let (_, full_receiver_dummy) = bounded(QUEUE_LENGTH);
+    let (empty_sender_dummy, _) = bounded(1);
+    let (_, full_receiver_dummy) = bounded(1);
     let sample_manager = SampleManager::dummy_sample(sample_label.clone());
     info!("Reporting level is: {}", reporting_level);
     let mut report_manager = analyse_fastq(

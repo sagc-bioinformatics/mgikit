@@ -3,25 +3,91 @@ use std::path::{ Path, PathBuf };
 use log::info;
 use core::panic;
 use flate2::read::MultiGzDecoder;
-use std::io::{ BufReader, BufWriter, Read, Write };
+use flate2::{ Decompress, FlushDecompress, Status };
+use std::io::{ self, BufReader, BufWriter, Read, Write };
 use std::fs::File;
 use std::thread::{ self, JoinHandle };
 use crossbeam_channel::{ Receiver, Sender };
 use memchr::memchr_iter;
 use log::debug;
+use std::mem;
+
+pub struct RawReader {
+    sender: Sender<(usize, Vec<u8>)>,
+    receiver: Receiver<(usize, Vec<u8>)>,
+    buffer: Vec<u8>,
+    offset: usize,
+    end: usize,
+    done: bool,
+}
+
+impl RawReader {
+    pub fn new(
+        receiver: Receiver<(usize, Vec<u8>)>,
+        sender: Sender<(usize, Vec<u8>)>,
+        buffer_size: usize
+    ) -> Self {
+        Self {
+            sender,
+            receiver,
+            buffer: vec![0_u8; buffer_size],
+            offset: 0,
+            end: 0,
+            done: false,
+        }
+    }
+}
+
+impl Read for RawReader {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.offset == self.end && !self.done {
+            match self.receiver.recv() {
+                Ok((bytes, mut chunk)) => {
+                    mem::swap(&mut self.buffer, &mut chunk);
+                    match self.sender.send((0, chunk)) {
+                        Ok(_) => {
+                            //debug!("Sending: {} bytes", last_sent_endline);
+                            //debug!("kept: {}",extra_len);
+                        }
+                        Err(e) => println!("error: {e:?}"),
+                    }
+                    self.offset = 0;
+                    self.end = bytes;
+                }
+                Err(_) => {
+                    panic!("Error receiving!");
+                }
+            }
+        }
+
+        if self.offset < self.end {
+            let n = (self.end - self.offset).min(out.len());
+            out[..n].copy_from_slice(&self.buffer[self.offset..self.offset + n]);
+            self.offset += n;
+            Ok(n)
+        } else {
+            Ok(0) // EOF
+        }
+    }
+}
 
 fn read_bytes_in_reads<R: Read>(
     reader: &mut R,
     buffer: &mut [u8],
     minimum: usize,
     last_byte: &mut usize
-) -> (bool, Vec<usize>) {
-    let mut curr_bytes: usize;
+) -> (usize, Vec<usize>) {
+    let mut curr_bytes: usize = 0;
     let mut lines: Vec<usize> = Vec::with_capacity(minimum * 2);
     lines.extend(memchr_iter(b'\n', &buffer[..*last_byte]));
         
     loop {
-        //debug!("buffer length: {}, starting from {}", buffer.len(), last_byte);
+        debug!(
+            "buffer length: {}, starting from {}, current read {}",
+            buffer.len(),
+            last_byte,
+            curr_bytes
+        );
         curr_bytes = reader.read(&mut buffer[*last_byte..]).unwrap();
         lines.extend(memchr_iter(b'\n', &buffer[*last_byte..*last_byte + curr_bytes]).map(|it| it + *last_byte));
         *last_byte += curr_bytes;
@@ -39,17 +105,19 @@ fn read_bytes_in_reads<R: Read>(
     //println!("{}  - {:?}", lines.len(), last_10);
     
     //debug!("total lines: {} - still more", line_cnt);
-    return (*last_byte > 0, lines);
+    return (*last_byte, lines);
 }
 
 pub fn fill_send_buffers<R: Read>(
     full_sender: &Sender<(usize, Vec<u8>, Vec<usize>)>,
     empty_receiver: &Receiver<(usize, Vec<u8>)>,
+    empty_sender: &Sender<(usize, Vec<u8>)>,
     reader: &mut R,
     read_cnt: usize,
     extra: &mut Vec<u8>,
-    extra_len: &mut usize
-) -> bool {
+    extra_len: &mut usize,
+    force: bool
+) -> (usize, usize) {
     let mut total_bytes = 0;
     match empty_receiver.recv() {
         Ok((_, mut buffer)) => {
@@ -59,28 +127,64 @@ pub fn fill_send_buffers<R: Read>(
                 *extra_len = 0;
             }
 
-            let (_, mut lines) = read_bytes_in_reads(
+            let (last_read_bytes, mut lines) = read_bytes_in_reads(
                 reader,
                 &mut buffer[..],
                 read_cnt,
                 &mut total_bytes
             );
-            //let tmp = memchr_iter(b'\n', &buffer[..total_bytes]).count();
-            //debug!("total read bytes: {}  -  lines: {}  - needed lines: {}, total_lnes_again: {}", total_bytes, lines.len(), read_cnt * 4, tmp);
             //let mut lines = memchr_iter(b'\n', &buffer[..total_bytes]);
-            
-            if lines.len() >= read_cnt * 4 {
-                lines.truncate(read_cnt * 4);
-                *extra_len = total_bytes - lines.last().unwrap() - 1;
-                extra[..*extra_len].copy_from_slice(
-                    &buffer[lines.last().unwrap() + 1..total_bytes]
-                );
-                total_bytes = lines.last().unwrap() + 1;
+            //debug!("total read bytes: {}  -  lines: {}  - needed lines: {}", total_bytes, lines.count(), read_cnt * 4);
+            //let mut lines = memchr_iter(b'\n', &buffer[..total_bytes]);
+            if lines.len() >= read_cnt * 4 || force {
+                if lines.len() >= read_cnt * 4 {
+                    lines.truncate(read_cnt * 4);
+                    *extra_len = total_bytes - lines.last().unwrap() - 1;
+                    extra[..*extra_len].copy_from_slice(
+                        &buffer[lines.last().unwrap() + 1..total_bytes]
+                    );
+                    total_bytes = lines.last().unwrap() + 1;
+                }
+                //println!("reader lines: {}", lines.count());
+                match full_sender.send((total_bytes, buffer, lines)) {
+                    Ok(_) => {
+                        //debug!("Sending: {} bytes", last_sent_endline);
+                        //debug!("kept: {}",extra_len);
+                    }
+                    Err(e) => println!("error: {e:?}"),
+                }
+                return (total_bytes, last_read_bytes);
+            } else {
+                *extra_len = total_bytes;
+                extra[..*extra_len].copy_from_slice(&buffer[..total_bytes]);
+                match empty_sender.send((0, buffer)) {
+                    Ok(_) => {
+                        //debug!("Sending: {} bytes", last_sent_endline);
+                        //debug!("kept: {}",extra_len);
+
+                    }
+                    Err(e) => println!("error: {e:?}"),
+                }
+                return (0, last_read_bytes);
             }
-            //debug!("extra length: {}  -  bytes sent: {}", extra_len, total_bytes);
-            
-            //println!("reader lines: {}", lines.count());
-            match full_sender.send((total_bytes, buffer, lines)) {
+        }
+        Err(_) => {
+            debug!("Error while sending!");
+            panic!("error!")
+        }
+    }
+}
+
+pub fn send_raw_data_buffers<R: Read>(
+    full_sender: &Sender<(usize, Vec<u8>)>,
+    empty_receiver: &Receiver<(usize, Vec<u8>)>,
+    reader: &mut R
+) -> bool {
+    let mut total_bytes = 0;
+    match empty_receiver.recv() {
+        Ok((_, mut buffer)) => {
+            let _ = read_bytes(reader, &mut buffer[..], &mut total_bytes);
+            match full_sender.send((total_bytes, buffer)) {
                 Ok(_) => {
                     //debug!("Sending: {} bytes", last_sent_endline);
                     //debug!("kept: {}",extra_len);
@@ -140,6 +244,10 @@ pub fn get_gzip_reader<P: AsRef<Path>>(file_path: &P) -> MultiGzDecoder<File> {
     flate2::read::MultiGzDecoder::new(std::fs::File::open(file_path).unwrap())
 }
 
+pub fn get_reader<P: AsRef<Path>>(file_path: &P) -> File {
+    std::fs::File::open(file_path).unwrap()
+}
+
 pub fn parallel_reader_thread(
     paired_reads: PathBuf,
     barcode_reads: PathBuf,
@@ -148,14 +256,17 @@ pub fn parallel_reader_thread(
     read_rp: bool,
     full_sender_rb: Sender<(usize, Vec<u8>, Vec<usize>)>,
     full_sender_rp: Sender<(usize, Vec<u8>, Vec<usize>)>,
+    empty_sender_rb: Sender<(usize, Vec<u8>)>,
+    empty_sender_rp: Sender<(usize, Vec<u8>)>,
     full_receiver_rb: Receiver<(usize, Vec<u8>, Vec<usize>)>,
     full_receiver_rp: Receiver<(usize, Vec<u8>, Vec<usize>)>,
     empty_receiver_rb: Receiver<(usize, Vec<u8>)>,
     empty_receiver_rp: Receiver<(usize, Vec<u8>)>,
     full_sender: Sender<(usize, Vec<u8>, Vec<usize>, usize, Vec<u8>, Vec<usize>)>,
     processing_threads: usize,
+    buffer_size: usize,
     paired_input: bool,
-    buffer_size: usize
+    main_sender: bool
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         info!("Reader thread has started!");
@@ -176,21 +287,25 @@ pub fn parallel_reader_thread(
         let mut extra_rp: Vec<u8> = if read_rp { vec![b'0'; buffer_size] } else { Vec::new() };
         let mut extra_len_rp: usize = 0;
 
-        let mut keep_reading_rp = read_rp;
         let mut readers_finished = false;
         loop {
             //debug!("--------------------------------");
             if read_rb {
                 match reader_barcode_read {
                     Some(ref mut reader_barcode) => {
-                        let _ = fill_send_buffers(
+                        let (sent_bytes, _) = fill_send_buffers(
                             &full_sender_rb,
                             &empty_receiver_rb,
+                            &empty_sender_rb,
                             reader_barcode,
                             batch_size,
                             &mut extra_rb,
-                            &mut extra_len_rb
+                            &mut extra_len_rb,
+                            true
                         );
+                        if !main_sender && sent_bytes == 0 {
+                            readers_finished = true;
+                        }
                         debug!("Sent rb full buffer!");
                     }
                     None => {}
@@ -200,24 +315,26 @@ pub fn parallel_reader_thread(
             if read_rp {
                 match reader_paired_read {
                     Some(ref mut reader_paired) => {
-                        keep_reading_rp = fill_send_buffers(
+                        let (sent_bytes, _) = fill_send_buffers(
                             &full_sender_rp,
                             &empty_receiver_rp,
+                            &empty_sender_rp,
                             reader_paired,
                             batch_size,
                             &mut extra_rp,
-                            &mut extra_len_rp
+                            &mut extra_len_rp,
+                            true
                         );
+                        if !main_sender && sent_bytes == 0 {
+                            readers_finished = true;
+                        }
                         debug!("Sent rp full buffer!");
                     }
                     None => {}
                 }
-                if read_rp && !read_rb && !keep_reading_rp {
-                    readers_finished = true;
-                }
             }
 
-            if read_rb {
+            if main_sender {
                 let (read_bytes2, buffer2, lines_rb) = full_receiver_rb.recv().unwrap();
                 let (read_bytes1, buffer1, lines_rp) = if paired_input {
                     full_receiver_rp.recv().unwrap()
@@ -246,7 +363,7 @@ pub fn parallel_reader_thread(
             //println!("reading: {}   ---  {}", read_rb, read_rp);
             //panic!(" ------------");
             if readers_finished {
-                if read_rb {
+                if main_sender {
                     for i in 1..processing_threads {
                         match
                             full_sender.send((0, Vec::new(), Vec::new(), 0, Vec::new(), Vec::new()))
@@ -308,4 +425,226 @@ pub fn write_file<P: AsRef<Path>>(file_path: &P, content: &String) {
         .expect("couldn't create output")
         .write_all(content.as_bytes())
         .unwrap();
+}
+/*
+pub fn parallel_reader_decompressor_thread(
+    reads_path: PathBuf,
+    batch_size: usize,
+    empty_raw_sender: Sender<(usize, Vec<u8>)>,
+    empty_raw_receiver: Receiver<(usize, Vec<u8>)>,
+    full_raw_sender: Sender<(usize, Vec<u8>)>,
+    full_raw_receiver: Receiver<(usize, Vec<u8>)>,
+    full_receiver_rb: Receiver<(usize, Vec<u8>, Vec<usize>)>,
+    full_receiver_rp: Receiver<(usize, Vec<u8>, Vec<usize>)>,
+    full_sender: Sender<(usize, Vec<u8>, Vec<usize>)>,
+    empty_receiver: Receiver<(usize, Vec<u8>)>,
+    empty_sender: Sender<(usize, Vec<u8>)>,
+    full_sender_paired: Sender<(usize, Vec<u8>, Vec<usize>, usize, Vec<u8>, Vec<usize>)>,
+    processing_threads: usize,
+    buffer_size: usize,
+    paired_input: bool,
+    main_sender: bool
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        info!("Reader thread has started!");
+        let decoder_thread = thread::spawn(move || {
+            let mut decoder = Decompress::new(true);
+            //let mut read_bytes ;
+            //let mut buffer = Vec::new();
+            let mut extra_len = 0;
+            let mut extra = vec![0_u8; buffer_size];
+            let mut raw_start;
+            let mut decompressed_bytes;
+            let mut sent_buffer;
+            let mut reset_decompressor;
+            loop{
+                let (read_bytes, buffer) = full_raw_receiver.recv().unwrap();
+                raw_start = 0;
+                if read_bytes == 0{
+                    send_buffer(
+                        &full_sender,
+                        &empty_receiver,
+                        &extra[..extra_len]
+                    );
+                    break;
+                }
+                loop{
+                    (decompressed_bytes, sent_buffer, reset_decompressor) = decode_send_buffer(
+                        &full_sender,
+                        &empty_receiver,
+                        &empty_sender,
+                        &mut decoder,
+                        &buffer[raw_start..read_bytes],
+                        batch_size,
+                        &mut extra,
+                        &mut extra_len,
+                        read_bytes == 0
+                    );
+                    debug!("decompressed_bytes: {} - sent_buffer: {} - reset_decompressor: {}", decompressed_bytes, sent_buffer, reset_decompressor);
+                    if reset_decompressor{
+                        decoder = Decompress::new(true);
+                    }
+                    raw_start += decompressed_bytes;
+                    
+                    if main_sender && sent_buffer {
+                        let (read_bytes2, buffer2, lines_rb) = full_receiver_rb.recv().unwrap();
+                        let (read_bytes1, buffer1, lines_rp) = if paired_input {
+                            full_receiver_rp.recv().unwrap()
+                        } else {
+                            (0, Vec::new(), Vec::new())
+                        };
+                        match
+                            full_sender_paired.send((
+                                read_bytes2,
+                                buffer2,
+                                lines_rb,
+                                read_bytes1,
+                                buffer1,
+                                lines_rp,
+                            ))
+                        {
+                            Ok(_) => {
+                                debug!("Sending full {} - {}", read_bytes1, read_bytes2);
+                            } //println!("All good: {v:?}"),
+                            Err(e) => println!("error: {e:?}"),
+                        }
+                    }
+                    if raw_start == read_bytes
+                    {
+                        break;
+                    }
+                }
+                match empty_raw_sender.send((0, buffer)) {
+                    Ok(_) => {
+                        //debug!("Sending: {} bytes", last_sent_endline);
+                        //debug!("kept: {}",extra_len);
+
+                    }
+                    Err(e) => println!("error: {e:?}"),
+                }
+            }
+            if main_sender {
+                for i in 1..processing_threads {
+                    match
+                        full_sender_paired.send((0, Vec::new(), Vec::new(), 0, Vec::new(), Vec::new()))
+                    {
+                        Ok(_) => {
+                            debug!("Sending finish signal {}", i);
+                        } //println!("All good: {v:?}"),
+                        Err(e) => println!("error: {e:?}"),
+                    };
+                }
+                info!("Readers threads are done!");
+            } else {
+                info!("Secondary reader thread is done!");
+            }
+        });
+        let mut data_reader = get_reader(&reads_path);
+        loop {
+            if ! send_raw_data_buffers(
+                &full_raw_sender,
+                &empty_raw_receiver,
+                &mut data_reader,
+            ){break;}
+        }
+        decoder_thread.join().unwrap();
+    })
+}
+*/
+pub fn parallel_reader_decompressor_thread(
+    reads_path: PathBuf,
+    batch_size: usize,
+    empty_raw_sender: Sender<(usize, Vec<u8>)>,
+    empty_raw_receiver: Receiver<(usize, Vec<u8>)>,
+    full_raw_sender: Sender<(usize, Vec<u8>)>,
+    full_raw_receiver: Receiver<(usize, Vec<u8>)>,
+    full_receiver_rb: Receiver<(usize, Vec<u8>, Vec<usize>)>,
+    full_receiver_rp: Receiver<(usize, Vec<u8>, Vec<usize>)>,
+    full_sender: Sender<(usize, Vec<u8>, Vec<usize>)>,
+    empty_receiver: Receiver<(usize, Vec<u8>)>,
+    empty_sender: Sender<(usize, Vec<u8>)>,
+    full_sender_paired: Sender<(usize, Vec<u8>, Vec<usize>, usize, Vec<u8>, Vec<usize>)>,
+    processing_threads: usize,
+    buffer_size: usize,
+    paired_input: bool,
+    main_sender: bool
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        info!("Reader thread has started!");
+        let decoder_thread = thread::spawn(move || {
+            let mut extra_len = 0;
+            let mut extra = vec![0_u8; buffer_size];
+            let mut decoder = MultiGzDecoder::new(
+                RawReader::new(full_raw_receiver, empty_raw_sender, buffer_size)
+            );
+            loop {
+                let (sent_bytes, _) = fill_send_buffers(
+                    &full_sender,
+                    &empty_receiver,
+                    &empty_sender,
+                    &mut decoder,
+                    batch_size,
+                    &mut extra,
+                    &mut extra_len,
+                    true
+                );
+
+                if main_sender {
+                    let (read_bytes2, buffer2, lines_rb) = full_receiver_rb.recv().unwrap();
+                    let (read_bytes1, buffer1, lines_rp) = if paired_input {
+                        full_receiver_rp.recv().unwrap()
+                    } else {
+                        (0, Vec::new(), Vec::new())
+                    };
+                    match
+                        full_sender_paired.send((
+                            read_bytes2,
+                            buffer2,
+                            lines_rb,
+                            read_bytes1,
+                            buffer1,
+                            lines_rp,
+                        ))
+                    {
+                        Ok(_) => {
+                            debug!("Sending full {} - {}", read_bytes1, read_bytes2);
+                        } //println!("All good: {v:?}"),
+                        Err(e) => println!("error: {e:?}"),
+                    }
+                }
+                if sent_bytes == 0 {
+                    break;
+                }
+            }
+            if main_sender {
+                for i in 1..processing_threads {
+                    match
+                        full_sender_paired.send((
+                            0,
+                            Vec::new(),
+                            Vec::new(),
+                            0,
+                            Vec::new(),
+                            Vec::new(),
+                        ))
+                    {
+                        Ok(_) => {
+                            debug!("Sending finish signal {}", i);
+                        } //println!("All good: {v:?}"),
+                        Err(e) => println!("error: {e:?}"),
+                    };
+                }
+                info!("Readers threads are done!");
+            } else {
+                info!("Secondary reader thread is done!");
+            }
+        });
+        let mut data_reader = get_reader(&reads_path);
+        loop {
+            if !send_raw_data_buffers(&full_raw_sender, &empty_raw_receiver, &mut data_reader) {
+                break;
+            }
+        }
+        decoder_thread.join().unwrap();
+    })
 }
