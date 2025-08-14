@@ -379,6 +379,22 @@ fn main() {
                             .action(ArgAction::SetTrue)
                             .default_value("false")
                             .help("Validate the content of the fastq files.")
+                    ).arg(
+                        Arg::new("arg_threads_r")
+                            .long("reader-threads")
+                            .default_value("0")
+                            .value_parser(clap::value_parser!(usize))
+                            .help(
+                                "The requested threads to be used for input reading. Default is 0 which means auto configuration."
+                            )
+                    ).arg(
+                        Arg::new("arg_threads_w")
+                            .long("writer-threads")
+                            .default_value("0")
+                            .value_parser(clap::value_parser!(usize))
+                            .help(
+                                "The requested threads to be used for processing and writing outputs. Default is 0 which means auto configuration."
+                            )
                     )
             )
             .subcommand(

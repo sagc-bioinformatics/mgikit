@@ -133,7 +133,11 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 
 - **`--not-mgi`**: This flag needs to be enabled if the input fastq files don't have MGI format.
 
-- **`--threads` or `-t`**: The number of threads to be utilised. By default, it uses all available cpus..
+- **`--threads` or `-t`**: The number of threads to be utilised. By default, it uses all available cpus.
+
+- **`--reader-threads`**: The requested threads to be used for input reading. Default is 0, which means auto configuration according to the value of the `--threads` parameter.
+
+- **`--writer-threads`**: The requested threads to be used for processing and writing outputs. Default is 0, which means auto configuration according to the value of the `--threads` parameter.
 
 - **`--mgi-full-header`**: when enabled, the tool will write sample barcodes and UMI to the read header when using MGI format, by default it will not.
 
@@ -377,6 +381,51 @@ python setup.py install
 multiqc mgikit-examples/test/
 
 ```
+
+### Parallel execution
+
+`mgikit` supports parallel execution to improve performance. The level and distribution of parallelization are controlled by three parameters:
+
+- **`--threads`**: Sets the total number of threads to be used for execution (both reading and processing).
+
+- **`--reader-threads`**: Sets the number of threads dedicated to reading (possible values are 0, 1, 2, 4). When there is more than 1 thread per input file (R1 and R2 files), one thread will be used for reading, and the other for decompression.
+
+- **`--writer-threads`**: Sets the number of threads dedicated to processing and writing output files.
+
+#### Parameter Priority
+
+If both `--writer-threads` and `--reader-threads` are greater than `0`, these values take priority and are used directly. The `--threads` parameter will be ignored.
+
+If either `--writer-threads` or `--reader-threads` is `0` (or not set), The `--threads` parameter will be used to determine the total concurrency.
+
+#### Default Thread Allocation
+
+mgikit will only use the minimim number of requested threads and available CPU core. The default behavoir is: 
+
+1. If you only have 1 CPU core, all work happens in a single processing thread.
+
+2. If your data is paired-end:
+
+- 2–4 CPU cores: 1 thread is used for reading, the rest for processing.
+
+- 5–8 CPU cores: 2 threads are used for reading, the rest for processing.
+
+- 9 or more CPU cores: 4 threads are used for reading, the rest for processing.
+
+3. If your data is single-end:
+
+- 4 or fewer CPU cores: 1 thread is used for reading, the rest for processing.
+
+- More than 4 CPU cores: 2 threads are used for reading, the rest for processing.
+
+This default configuration showed the best performance in testing datasets.
+
+#### Example:
+
+threads = 8 → 2 reader threads, 6 processing threads.
+
+`reader-threads` = 4 and `writer-threads` = 2 → Uses exactly 4 readers and 2 writer threads; threads is ignored.
+
 
 ### Performance evaluation
 

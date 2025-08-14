@@ -1706,10 +1706,40 @@ pub fn initiate_demultiplexing(demultiplex_command: &ArgMatches) {
     if 0.0 < arg_memory && arg_memory <= 0.5 {
         panic!("Requested memory should be greater than 0.5 GB!");
     }
-    let (reader_threads, processing_threads) = get_cpus(
+    
+    let mut tmp_reader_threads = *demultiplex_command.get_one::<usize>("arg_threads_r").unwrap();
+    let mut tmp_processing_threads = *demultiplex_command.get_one::<usize>("arg_threads_w").unwrap();
+    
+    let (reader_threads, processing_threads) = if tmp_processing_threads > 0 && tmp_reader_threads > 0 {
+        if run_manager.paired_read_input(){
+            if tmp_reader_threads > 4 {
+                warn!("Reader threads can not be more than 4!");
+                tmp_reader_threads = 4;
+            }else if tmp_reader_threads == 3 {
+                warn!("Reader threads shoyuld be either 0, 1, 2, or 4!");
+                tmp_reader_threads = 2;
+            }
+        }else{
+            if tmp_reader_threads > 2{
+                warn!("Reader threads can not be more than 2 for single end input!");
+                tmp_reader_threads = 2;
+            }
+        }
+        info!("Reader threads ({}) and processing threads ({}) will be used!", 
+            tmp_reader_threads, 
+            tmp_processing_threads
+        );
+        (tmp_reader_threads, tmp_processing_threads)
+    }else
+    {
+        get_cpus(
         *demultiplex_command.get_one::<usize>("arg_threads").unwrap(),
-        run_manager.paired_read_input()
-    );
+            run_manager.paired_read_input()
+        )
+    };
+
+
+
     let max_buffer_size = calculate_largest_buffer_size(
         get_available_memory(arg_memory),
         sample_manager.get_sample_count(),
