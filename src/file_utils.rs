@@ -3,7 +3,6 @@ use std::path::{ Path, PathBuf };
 use log::info;
 use core::panic;
 use flate2::read::MultiGzDecoder;
-use flate2::{ Decompress, FlushDecompress, Status };
 use std::io::{ self, BufReader, BufWriter, Read, Write };
 use std::fs::File;
 use std::thread::{ self, JoinHandle };
@@ -74,13 +73,10 @@ impl Read for RawReader {
 fn read_bytes_in_reads<R: Read>(
     reader: &mut R,
     buffer: &mut [u8],
-    minimum: usize,
+    _minimum: usize,
     last_byte: &mut usize
 ) -> (usize, Vec<usize>) {
     let mut curr_bytes: usize = 0;
-    let mut lines: Vec<usize> = Vec::with_capacity(minimum * 2);
-    lines.extend(memchr_iter(b'\n', &buffer[..*last_byte]));
-        
     loop {
         debug!(
             "buffer length: {}, starting from {}, current read {}",
@@ -89,24 +85,16 @@ fn read_bytes_in_reads<R: Read>(
             curr_bytes
         );
         curr_bytes = reader.read(&mut buffer[*last_byte..]).unwrap();
-        lines.extend(memchr_iter(b'\n', &buffer[*last_byte..*last_byte + curr_bytes]).map(|it| it + *last_byte));
-        *last_byte += curr_bytes;
-        //println!(" reads: {} - lines: {}  - curr: {}", minimum * 4, lines.len(), curr_bytes);
-        if curr_bytes == 0 || lines.len() >= minimum * 4 {
+        if curr_bytes == 0 {
             //debug!("total lines: {} - no more", line_cnt);
             break;
         }
+        *last_byte += curr_bytes;
     }
-    //let last_10 = &lines[lines.len().saturating_sub(10)..];
-    //println!("{}  - {:?}", lines.len(), last_10);
-    //lines = Vec::new();
-    //lines.extend(memchr_iter(b'\n', &buffer[..*last_byte]).collect::<Vec<usize>>());
-    //let last_10 = &lines[lines.len().saturating_sub(10)..];
-    //println!("{}  - {:?}", lines.len(), last_10);
-    
     //debug!("total lines: {} - still more", line_cnt);
-    return (*last_byte, lines);
+    return (curr_bytes, memchr_iter(b'\n', &buffer[..*last_byte]).collect::<Vec<usize>>());
 }
+
 
 pub fn fill_send_buffers<R: Read>(
     full_sender: &Sender<(usize, Vec<u8>, Vec<usize>)>,
