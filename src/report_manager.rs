@@ -1,13 +1,13 @@
+use crate::file_utils::{create_output_file, get_buf_writer};
+use crate::{run_manager::ReadInfo, variables::*, RunManager, SampleManager};
+use log::{error, info};
 use std::collections::HashMap;
-use log::{ info, error };
-use std::time::Instant;
 use std::collections::HashSet;
-use crate::{ run_manager::ReadInfo, RunManager, SampleManager, variables::* };
-use crate::file_utils::{ get_buf_writer, create_output_file };
-use std::path::PathBuf;
-use std::io::Write;
-use std::io::BufWriter;
 use std::fs::File;
+use std::io::BufWriter;
+use std::io::Write;
+use std::path::PathBuf;
+use std::time::Instant;
 
 pub fn write_general_info_report(
     sample_information: &Vec<Vec<String>>,
@@ -16,7 +16,7 @@ pub fn write_general_info_report(
     run: &String,
     lane: &String,
     output_file: &PathBuf,
-    execluded_samples: &Vec<usize>
+    execluded_samples: &Vec<usize>,
 ) {
     //Mb Total Yield: total bases as cnt of r1 + r2
     //M Total Clusters: number of reads
@@ -25,22 +25,22 @@ pub fn write_general_info_report(
     //% Perfect Index: index with 0 mismatches / all reads.
 
     /*
-            sample_statistics[sample_id]:
-            0: r1 count of qs > 30
-            1: r2 count os qs > 30
-            2: r3 count of (barcode) with qs > 30
+        sample_statistics[sample_id]:
+        0: r1 count of qs > 30
+        1: r2 count os qs > 30
+        2: r3 count of (barcode) with qs > 30
 
-            3: r1 count of bases
-            4: r2 count of bases
-            5: r3 count of bases
+        3: r1 count of bases
+        4: r2 count of bases
+        5: r3 count of bases
 
-            6: qs of r1
-            7: qs of r2
-            8:  qs of r3
-            9: read count
-            from 10 to whatever mismatches allowed: is the number oif reads with the iteration mismatch
-            
-        */
+        6: qs of r1
+        7: qs of r2
+        8:  qs of r3
+        9: read count
+        from 10 to whatever mismatches allowed: is the number oif reads with the iteration mismatch
+
+    */
     let mut out_str = String::from(
         "#sample general info\nSample ID\tM Clusters\tMb Yield ≥ Q30\t% R1 Yield ≥ Q30\t% R2 Yield ≥ Q30\t% R3 Yield ≥ Q30\t% Perfect Index\n"
     );
@@ -64,13 +64,17 @@ pub fn write_general_info_report(
     }
 
     if unique_sample_ids.len() == sample_information.len() {
-        sample_statistics_copy.sort_by(|a, b|
-            b[9].cmp(&a[9]).then_with(|| a.last().unwrap().cmp(&b.last().unwrap()))
-        );
+        sample_statistics_copy.sort_by(|a, b| {
+            b[9].cmp(&a[9])
+                .then_with(|| a.last().unwrap().cmp(&b.last().unwrap()))
+        });
     }
 
     for sample_id_itr in 0..sample_statistics_copy.len() {
-        sample_id = sample_statistics_copy[sample_id_itr].last().unwrap().clone() as usize;
+        sample_id = sample_statistics_copy[sample_id_itr]
+            .last()
+            .unwrap()
+            .clone() as usize;
 
         if kept_samples.len() > 0 && !kept_samples.contains(&sample_id) {
             continue;
@@ -169,13 +173,17 @@ pub fn write_general_info_report(
     final_out_str.push_str(&format!("{}", lane_statistics[1] / 1000000.0));
     final_out_str.push('\t');
 
-    final_out_str.push_str(&format!("{:.3?}", (lane_statistics[2] / lane_statistics[0]) * 100.0));
+    final_out_str.push_str(&format!(
+        "{:.3?}",
+        (lane_statistics[2] / lane_statistics[0]) * 100.0
+    ));
     final_out_str.push('\t');
     final_out_str.push_str(&format!("{:.3?}", lane_statistics[3] / lane_statistics[0]));
     final_out_str.push('\t');
-    final_out_str.push_str(
-        &format!("{:.3?}", (lane_statistics[4] / (lane_statistics[1] - execluded_reads)) * 100.0)
-    );
+    final_out_str.push_str(&format!(
+        "{:.3?}",
+        (lane_statistics[4] / (lane_statistics[1] - execluded_reads)) * 100.0
+    ));
     final_out_str.push('\n');
 
     final_out_str.push_str(&out_str);
@@ -190,7 +198,7 @@ pub fn write_index_info_report(
     kept_samples: &Vec<usize>,
     max_mismatches: usize,
     output_file: &PathBuf,
-    execluded_samples: &Vec<usize>
+    execluded_samples: &Vec<usize>,
 ) {
     let mut report_str = String::from("sample");
 
@@ -212,9 +220,10 @@ pub fn write_index_info_report(
     }
 
     if unique_sample_ids.len() == sample_information.len() {
-        sample_mismatches_copy.sort_by(|a, b|
-            b[0].cmp(&a[0]).then_with(|| a.last().unwrap().cmp(&b.last().unwrap()))
-        );
+        sample_mismatches_copy.sort_by(|a, b| {
+            b[0].cmp(&a[0])
+                .then_with(|| a.last().unwrap().cmp(&b.last().unwrap()))
+        });
     }
     //sample_mismatches_copy.sort_by(|a, b| b[0].cmp(&a[0]));
     for sample_id_itr in 0..sample_mismatches_copy.len() {
@@ -263,17 +272,17 @@ impl ReportManager {
                 0: r1 count of qs > 30
                 1: r2 count os qs > 30
                 2: r3 count of (barcode) with qs > 30
-    
+
                 3: r1 count of bases
                 4: r2 count of bases
                 5: r3 count of bases
-    
+
                 6: qs of r1
                 7: qs of r2
                 8:  qs of r3
                 9: read count
                 from 10 to whatever mismatches allowed: is the number oif reads with the iteration mismatch
-                
+
             */
         }
         Self {
@@ -315,7 +324,8 @@ impl ReportManager {
             increment
         );
         debug!("update mismatches: {:?}", &self.sample_mismatches[sample_id]);
-        */ self.sample_mismatches[sample_id][index] += increment;
+        */
+        self.sample_mismatches[sample_id][index] += increment;
     }
 
     pub fn update_undetermined(&mut self, curr_barcode: String, increment: u64) {
@@ -430,7 +440,7 @@ impl ReportManager {
         shift: usize,
         barcode_read_info: &ReadInfo,
         paired_read_info: &ReadInfo,
-        barcode_length: usize
+        barcode_length: usize,
     ) {
         //let max_mismatches = if all_index_error {allowed_mismatches + 1} else {allowed_mismatches * 2 + 1};
         for sample_id in 0..self.total_samples {
@@ -438,8 +448,8 @@ impl ReportManager {
                 (*paired_read_info.sequence_length() as u64) * self.sample_mismatches[sample_id][0];
             self.sample_statistics[sample_id][6] -= self.sample_statistics[sample_id][3] * 33;
             self.sample_statistics[sample_id][shift + 3] =
-                ((barcode_read_info.sequence_length() - barcode_length) as u64) *
-                self.sample_mismatches[sample_id][0];
+                ((barcode_read_info.sequence_length() - barcode_length) as u64)
+                    * self.sample_mismatches[sample_id][0];
             self.sample_statistics[sample_id][5] =
                 (barcode_length as u64) * self.sample_mismatches[sample_id][0];
             self.sample_statistics[sample_id][6 + shift] -=
@@ -459,7 +469,7 @@ impl ReportManager {
         reporting_level: usize,
         report_limit: usize,
         mut max_mismatches: usize,
-        individual_sample: usize
+        individual_sample: usize,
     ) {
         let start_logs = Instant::now();
         let mut sample_stats_width: usize = self.sample_statistics[0].len();
@@ -531,7 +541,7 @@ impl ReportManager {
                     samples,
                     max_mismatches,
                     &out_file,
-                    &execluded_samples
+                    &execluded_samples,
                 );
                 //Finish writing info report
 
@@ -548,7 +558,7 @@ impl ReportManager {
                         &run_manager.flowcell(),
                         &run_manager.lane(),
                         &out_file,
-                        &execluded_samples
+                        &execluded_samples,
                     );
                 }
                 //start writing general report
@@ -579,7 +589,10 @@ impl ReportManager {
                 }
             }
             outfile = create_output_file(
-                &run_manager.report_dir().clone().join(format!("{}sample_stats", &report_path_main))
+                &run_manager
+                    .report_dir()
+                    .clone()
+                    .join(format!("{}sample_stats", &report_path_main)),
             );
             outfile.write_all(&out_str.as_bytes()).unwrap();
         }
@@ -593,7 +606,7 @@ impl ReportManager {
                     &run_manager
                         .report_dir()
                         .clone()
-                        .join(format!("{}ambiguous_barcode", &report_path_main))
+                        .join(format!("{}ambiguous_barcode", &report_path_main)),
                 );
                 ambiguous_barcodes_out.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)).reverse());
                 rep_itr = 0;
@@ -611,7 +624,7 @@ impl ReportManager {
                     &run_manager
                         .report_dir()
                         .clone()
-                        .join(format!("{}ambiguous_barcode.complete", &report_path_main))
+                        .join(format!("{}ambiguous_barcode.complete", &report_path_main)),
                 );
                 for barcode in &ambiguous_barcodes_out {
                     outfile
@@ -628,7 +641,7 @@ impl ReportManager {
                     &run_manager
                         .report_dir()
                         .clone()
-                        .join(&format!("{}undetermined_barcode", report_path_main))
+                        .join(&format!("{}undetermined_barcode", report_path_main)),
                 );
                 undetermined_barcodes_out.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)).reverse());
                 for barcode in &undetermined_barcodes_out {
@@ -641,12 +654,10 @@ impl ReportManager {
                     }
                 }
 
-                outfile = get_buf_writer(
-                    &run_manager
-                        .report_dir()
-                        .clone()
-                        .join(&format!("{}undetermined_barcode.complete", report_path_main))
-                );
+                outfile = get_buf_writer(&run_manager.report_dir().clone().join(&format!(
+                    "{}undetermined_barcode.complete",
+                    report_path_main
+                )));
                 undetermined_barcodes_out.sort_by(|a, b| (a.1, a.0).cmp(&(b.1, b.0)).reverse());
                 for barcode in &undetermined_barcodes_out {
                     outfile
@@ -658,6 +669,9 @@ impl ReportManager {
 
         let log_dur = start_logs.elapsed();
 
-        info!("Writing all logs and reports took {} secs.", log_dur.as_secs());
+        info!(
+            "Writing all logs and reports took {} secs.",
+            log_dur.as_secs()
+        );
     }
 }

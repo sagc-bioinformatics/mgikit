@@ -1,11 +1,11 @@
-use getset::CopyGetters;
-use std::{ path::PathBuf, sync::Mutex };
-use std::fs::OpenOptions;
-use crate::{ RunManager, SampleManager };
-use libdeflater::{ Compressor, CompressionLvl };
 use crate::file_utils::delete_file;
-use log::{ info, warn, debug };
+use crate::{RunManager, SampleManager};
+use getset::CopyGetters;
+use libdeflater::{CompressionLvl, Compressor};
+use log::{debug, info, warn};
+use std::fs::OpenOptions;
 use std::io::Write;
+use std::{path::PathBuf, sync::Mutex};
 
 use crate::variables::*;
 
@@ -28,38 +28,32 @@ impl SampleData {
         paired_end: bool,
         read2_has_sequence: bool,
         buffer_info: BufferInfo,
-        illumina_header_prefix: String
+        illumina_header_prefix: String,
     ) -> Self {
         Self {
             label,
             barcode_reads: match read2_has_sequence {
                 false => None,
-                true =>
-                    Some(
-                        SampleReads::new(
-                            PathBuf::new(),
-                            vec![0; buffer_info.reqiured_output_buffer_size()],
-                            vec![0; buffer_info.compression_buffer_size()],
-                            0,
-                            0
-                        )
-                    ),
+                true => Some(SampleReads::new(
+                    PathBuf::new(),
+                    vec![0; buffer_info.reqiured_output_buffer_size()],
+                    vec![0; buffer_info.compression_buffer_size()],
+                    0,
+                    0,
+                )),
             },
             paired_reads: match paired_end {
                 false => None,
-                true =>
-                    Some(
-                        SampleReads::new(
-                            PathBuf::new(),
-                            vec![0; buffer_info.reqiured_output_buffer_size()],
-                            vec![0; buffer_info.compression_buffer_size()],
-                            0,
-                            0
-                        )
-                    ),
+                true => Some(SampleReads::new(
+                    PathBuf::new(),
+                    vec![0; buffer_info.reqiured_output_buffer_size()],
+                    vec![0; buffer_info.compression_buffer_size()],
+                    0,
+                    0,
+                )),
             },
             compressor: Compressor::new(
-                CompressionLvl::new(buffer_info.compression_level() as i32).unwrap()
+                CompressionLvl::new(buffer_info.compression_level() as i32).unwrap(),
             ),
             buffer_info,
             illumina_header_prefix,
@@ -97,14 +91,14 @@ impl SampleData {
         sample_indx: usize,
         illumina_format: bool,
         output_dir: &PathBuf,
-        paired_read_input: bool
+        paired_read_input: bool,
     ) {
         let (output_file_r1, output_file_r2) = create_output_file_name(
             &self.label,
             &lane,
             sample_indx,
             illumina_format,
-            paired_read_input
+            paired_read_input,
         );
         //debug!("create files for sample {}: {}, {} with path {}", sample_indx, lane, illumina_format, output_dir.display());
         match self.paired_reads {
@@ -140,27 +134,27 @@ impl SampleData {
 
     pub fn barcode_read_buffer_end(&self) -> usize {
         match &self.barcode_reads {
-            Some(sr) => { sr.out_buffer_last }
-            None => { 0 }
+            Some(sr) => sr.out_buffer_last,
+            None => 0,
         }
     }
     pub fn paired_read_buffer_end(&self) -> usize {
         match &self.paired_reads {
-            Some(sr) => { sr.out_buffer_last }
-            None => { 0 }
+            Some(sr) => sr.out_buffer_last,
+            None => 0,
         }
     }
 
     pub fn barcode_read_compression_end(&self) -> usize {
         match &self.barcode_reads {
-            Some(sr) => { sr.compression_buffer_last }
-            None => { 0 }
+            Some(sr) => sr.compression_buffer_last,
+            None => 0,
         }
     }
     pub fn paired_read_compression_end(&self) -> usize {
         match &self.paired_reads {
-            Some(sr) => { sr.compression_buffer_last }
-            None => { 0 }
+            Some(sr) => sr.compression_buffer_last,
+            None => 0,
         }
     }
 
@@ -185,10 +179,9 @@ impl SampleData {
 
     pub fn compress_and_write(&mut self, force: bool, lock: &Mutex<bool>) {
         //debug!("br_comp_end: {}, pr_comp_end: {}, br_out_end: {}, pr_out_end: {}", self.barcode_read_compression_end(), self.paired_read_compression_end(), self.barcode_read_buffer_end(), self.paired_read_buffer_end());
-        if
-            self.barcode_read_compression_end() >= self.buffer_info.compression_threshold() ||
-            self.paired_read_compression_end() >= self.buffer_info.compression_threshold() ||
-            force
+        if self.barcode_read_compression_end() >= self.buffer_info.compression_threshold()
+            || self.paired_read_compression_end() >= self.buffer_info.compression_threshold()
+            || force
         {
             match self.barcode_reads {
                 Some(ref mut sr) => {
@@ -204,10 +197,9 @@ impl SampleData {
             };
         }
 
-        if
-            self.barcode_read_buffer_end() >= self.buffer_info.writing_threshold() ||
-            self.paired_read_buffer_end() >= self.buffer_info.writing_threshold() ||
-            force
+        if self.barcode_read_buffer_end() >= self.buffer_info.writing_threshold()
+            || self.paired_read_buffer_end() >= self.buffer_info.writing_threshold()
+            || force
         {
             let _l = lock.lock().unwrap();
             self.write();
@@ -255,7 +247,7 @@ impl SampleData {
         sep_position: usize,
         sb_header: bool,
         barcode_read: bool,
-        paired_read: bool
+        paired_read: bool,
     ) {
         if barcode_read {
             match self.barcode_reads {
@@ -269,7 +261,7 @@ impl SampleData {
                         umi,
                         l_position,
                         sep_position,
-                        sb_header
+                        sb_header,
                     );
                 }
                 None => {}
@@ -287,7 +279,7 @@ impl SampleData {
                         umi,
                         l_position,
                         sep_position,
-                        sb_header
+                        sb_header,
                     );
                 }
                 None => {}
@@ -297,14 +289,14 @@ impl SampleData {
 
     pub fn get_barcode_read_compression_end(&self) -> usize {
         match &self.barcode_reads {
-            Some(sr) => { sr.compression_buffer_last }
-            None => { usize::MAX }
+            Some(sr) => sr.compression_buffer_last,
+            None => usize::MAX,
         }
     }
     pub fn get_paired_read_compression_end(&self) -> usize {
         match &self.paired_reads {
-            Some(sr) => { sr.compression_buffer_last }
-            None => { usize::MAX }
+            Some(sr) => sr.compression_buffer_last,
+            None => usize::MAX,
         }
     }
     pub fn fix_paired_read_header(&mut self, tail_offset: usize, val: u8) {
@@ -321,13 +313,11 @@ impl SampleData {
             Some(ref mut pr) => {
                 match self.barcode_reads {
                     Some(ref mut br) => {
-                        pr.compression_buffer[
-                            pr.compression_buffer_last..pr.compression_buffer_last +
-                                br.compression_buffer_last -
-                                start
-                        ].copy_from_slice(
-                            &br.compression_buffer[start..br.compression_buffer_last]
-                        );
+                        pr.compression_buffer[pr.compression_buffer_last
+                            ..pr.compression_buffer_last + br.compression_buffer_last - start]
+                            .copy_from_slice(
+                                &br.compression_buffer[start..br.compression_buffer_last],
+                            );
                         pr.compression_buffer_last += br.compression_buffer_last - start;
                     }
                     None => {}
@@ -352,7 +342,7 @@ impl SampleReads {
         out_buffer: Vec<u8>,
         compression_buffer: Vec<u8>,
         out_buffer_last: usize,
-        compression_buffer_last: usize
+        compression_buffer_last: usize,
     ) -> Self {
         Self {
             output_file,
@@ -363,7 +353,7 @@ impl SampleReads {
         }
     }
 
-    /* 
+    /*
     pub fn compress_and_write(&mut self, compressor: &mut Compressor, compression_threshold: usize, writing_threshold: usize, force: bool){
         if self.compression_buffer_last >= compression_threshold || force {
             self.out_buffer_last = compress_buffer(&self.compression_buffer, self.compression_buffer_last, &mut self.out_buffer, self.out_buffer_last, compressor);
@@ -372,7 +362,7 @@ impl SampleReads {
         if self.out_buffer_last >= writing_threshold || force {
             write_data(&self.out_buffer, self.out_buffer_last, &self.output_file);
             self.out_buffer_last = 0;
-        }       
+        }
     }
     */
 
@@ -389,7 +379,7 @@ impl SampleReads {
             self.compression_buffer_last,
             &mut self.out_buffer,
             self.out_buffer_last,
-            compressor
+            compressor,
         );
         self.compression_buffer_last = 0;
     }
@@ -401,9 +391,9 @@ impl SampleReads {
 
     pub fn add_reads(&mut self, data: &[u8]) {
         //debug!("adding read with length {}", data.len());
-        self.compression_buffer[
-            self.compression_buffer_last..self.compression_buffer_last + data.len()
-        ].copy_from_slice(data);
+        self.compression_buffer
+            [self.compression_buffer_last..self.compression_buffer_last + data.len()]
+            .copy_from_slice(data);
         self.compression_buffer_last += data.len();
     }
 }
@@ -425,14 +415,16 @@ impl BufferInfo {
         compression_buffer_size: usize,
         compression_level: u32,
         compression_threshold: usize,
-        writing_threshold: usize
+        writing_threshold: usize,
     ) -> Self {
         info!("Output buffer size: {}", writing_buffer_size);
         info!("Compression buffer size: {}", compression_buffer_size);
-        info!("Compression level: {}. (0 no compression but fast, 12 best compression but slow.)", compression_level);
-        let mut compressor = Compressor::new(
-            CompressionLvl::new(compression_level as i32).unwrap()
+        info!(
+            "Compression level: {}. (0 no compression but fast, 12 best compression but slow.)",
+            compression_level
         );
+        let mut compressor =
+            Compressor::new(CompressionLvl::new(compression_level as i32).unwrap());
         if compression_buffer_size > writing_buffer_size {
             panic!(
                 "Compression buffer size '--compression-buffer-size' should be less than Writing buffer size ('--writing-buffer-size')."
@@ -446,7 +438,10 @@ impl BufferInfo {
 
         let reqiured_output_buffer_size =
             writing_buffer_size + compressor.gzip_compress_bound(compression_buffer_size);
-        debug!("Compression buffer flush threshold: {}", compression_threshold);
+        debug!(
+            "Compression buffer flush threshold: {}",
+            compression_threshold
+        );
         debug!("Output buffer flush threshold: {}", writing_threshold);
 
         Self {
@@ -461,12 +456,13 @@ impl BufferInfo {
 
     pub fn calculate_final_writing_buffer_size(&mut self, max_buffer_size: usize) {
         if self.writing_buffer_size > max_buffer_size {
-            warn!("Writing buffer size has been reduced to {} as there is no enough memory!", max_buffer_size);
-            self.reqiured_output_buffer_size =
-                max_buffer_size +
-                Compressor::new(
-                    CompressionLvl::new(self.compression_level as i32).unwrap()
-                ).gzip_compress_bound(self.compression_buffer_size);
+            warn!(
+                "Writing buffer size has been reduced to {} as there is no enough memory!",
+                max_buffer_size
+            );
+            self.reqiured_output_buffer_size = max_buffer_size
+                + Compressor::new(CompressionLvl::new(self.compression_level as i32).unwrap())
+                    .gzip_compress_bound(self.compression_buffer_size);
 
             self.writing_threshold = max_buffer_size;
         }
@@ -478,14 +474,16 @@ fn compress_buffer(
     source_size: usize,
     destination: &mut Vec<u8>,
     destination_size: usize,
-    compressor: &mut Compressor
+    compressor: &mut Compressor,
 ) -> usize {
     //debug!("Compressing {} bytes, on {}", source_size, destination_size);
     if source_size > 0 {
-        return
-            destination_size +
-            compressor
-                .gzip_compress(&source[0..source_size], &mut destination[destination_size..])
+        return destination_size
+            + compressor
+                .gzip_compress(
+                    &source[0..source_size],
+                    &mut destination[destination_size..],
+                )
                 .unwrap();
     }
     return destination_size;
@@ -508,7 +506,7 @@ pub fn calculate_reqiured_memory(
     total_samples: usize,
     writing_buffer_size: usize,
     compression_buffer_size: usize,
-    single_read_input: bool
+    single_read_input: bool,
 ) -> f64 {
     if single_read_input {
         (total_samples * (writing_buffer_size + 2 * compression_buffer_size)) as f64
@@ -522,18 +520,16 @@ pub fn calculate_largest_buffer_size(
     mut total_samples: usize,
     compression_buffer_size: usize,
     single_end: bool,
-    processors: usize
+    processors: usize,
 ) -> usize {
     if single_end {
         total_samples *= 2;
     }
     (2_usize).pow(
-        (
-            available_memory / ((total_samples * processors) as f64) -
-            2_f64 * (compression_buffer_size as f64)
-        )
+        (available_memory / ((total_samples * processors) as f64)
+            - 2_f64 * (compression_buffer_size as f64))
             .log2()
-            .floor() as u32
+            .floor() as u32,
     )
 }
 
@@ -542,10 +538,9 @@ fn create_output_file_name(
     lane: &String,
     sample_index: usize,
     illumina_format: bool,
-    paired_read_input: bool
+    paired_read_input: bool,
 ) -> (String, String) {
-
-    let br_suff = if paired_read_input{"R2"}else{"R1"};
+    let br_suff = if paired_read_input { "R2" } else { "R1" };
 
     if illumina_format {
         if sample_index == usize::MAX {
@@ -556,7 +551,10 @@ fn create_output_file_name(
         } else {
             return (
                 format!("{}_S{}_{}_R1_001.fastq.gz", sample_name, sample_index, lane),
-                format!("{}_S{}_{}_{}_001.fastq.gz", sample_name, sample_index, lane, br_suff),
+                format!(
+                    "{}_S{}_{}_{}_001.fastq.gz",
+                    sample_name, sample_index, lane, br_suff
+                ),
             );
         }
     } else {
@@ -575,7 +573,7 @@ fn write_illumina_header(
     umi: &[u8],
     l_position: usize,
     sep_position: usize,
-    sb_header: bool
+    sb_header: bool,
 ) -> usize {
     output_buffer[buffer_end] = mgi_read_header[l_position + 1];
     buffer_end += 1;
@@ -585,9 +583,8 @@ fn write_illumina_header(
 
     for i in l_position + 10..sep_position {
         if mgi_read_header[i] != b'0' {
-            output_buffer[buffer_end..buffer_end + sep_position - i].copy_from_slice(
-                &mgi_read_header[i..sep_position]
-            );
+            output_buffer[buffer_end..buffer_end + sep_position - i]
+                .copy_from_slice(&mgi_read_header[i..sep_position]);
             buffer_end += sep_position - i;
             break;
         }
@@ -635,9 +632,8 @@ fn write_illumina_header(
             output_buffer[buffer_end..buffer_end + umi.len()].copy_from_slice(&umi[..]);
             buffer_end += umi.len();
         }
-        output_buffer[
-            buffer_end..buffer_end + mgi_read_header.len() - sep_position - 1
-        ].copy_from_slice(&mgi_read_header[sep_position..mgi_read_header.len() - 1]);
+        output_buffer[buffer_end..buffer_end + mgi_read_header.len() - sep_position - 1]
+            .copy_from_slice(&mgi_read_header[sep_position..mgi_read_header.len() - 1]);
 
         buffer_end += mgi_read_header.len() - sep_position - 1;
     } else {
@@ -662,7 +658,7 @@ pub fn create_sample_data_list(
     run_manager: &RunManager,
     buffer_info: &BufferInfo,
     read2_has_sequence: bool,
-    illumina_format: bool
+    illumina_format: bool,
 ) -> Vec<SampleData> {
     let mut sample_data_list: Vec<SampleData> = Vec::new();
     let writing_samples = sample_manager.writing_samples();
@@ -686,7 +682,7 @@ pub fn create_sample_data_list(
                     run_manager.paired_read_input(),
                     read2_has_sequence || i >= undetermined_label_id,
                     buffer_info.clone(),
-                    illumina_header.clone()
+                    illumina_header.clone(),
                 );
                 if i < undetermined_label_id && illumina_format {
                     sample_data.create_files(
@@ -694,7 +690,7 @@ pub fn create_sample_data_list(
                         unique_samples_ids[i] + 1,
                         true,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                 } else if i >= undetermined_label_id && illumina_format {
                     sample_data.create_files(
@@ -702,7 +698,7 @@ pub fn create_sample_data_list(
                         usize::MAX,
                         true,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                 } else {
                     sample_data.create_files(
@@ -710,7 +706,7 @@ pub fn create_sample_data_list(
                         unique_samples_ids[i] + 1,
                         false,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                 }
             } else {
@@ -720,7 +716,7 @@ pub fn create_sample_data_list(
                     false,
                     false,
                     buffer_info.clone(),
-                    illumina_header.clone()
+                    illumina_header.clone(),
                 );
             }
             sample_data_list.push(sample_data);
@@ -734,7 +730,7 @@ pub fn clean_output_directory(
     run_manager: &RunManager,
     buffer_info: &BufferInfo,
     read2_has_sequence: bool,
-    illumina_format: bool
+    illumina_format: bool,
 ) {
     let writing_samples = sample_manager.writing_samples();
     let unique_samples_ids = sample_manager.unique_samples_ids();
@@ -755,7 +751,7 @@ pub fn clean_output_directory(
                     run_manager.paired_read_input(),
                     read2_has_sequence || i >= undetermined_label_id,
                     buffer_info.clone(),
-                    illumina_header.clone()
+                    illumina_header.clone(),
                 );
                 if i < undetermined_label_id && illumina_format {
                     sample_data.create_files(
@@ -763,7 +759,7 @@ pub fn clean_output_directory(
                         unique_samples_ids[i] + 1,
                         true,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                     sample_data.delete_sample_files();
                 } else if i >= undetermined_label_id && illumina_format {
@@ -772,7 +768,7 @@ pub fn clean_output_directory(
                         usize::MAX,
                         true,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                     sample_data.delete_sample_files();
                 } else {
@@ -781,7 +777,7 @@ pub fn clean_output_directory(
                         unique_samples_ids[i] + 1,
                         false,
                         run_manager.output_dir(),
-                        run_manager.paired_read_input()
+                        run_manager.paired_read_input(),
                     );
                     sample_data.delete_sample_files();
                 }
