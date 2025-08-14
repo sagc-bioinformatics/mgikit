@@ -966,119 +966,201 @@ fn testing_demultiplex_threads() {
 
 #[test]
 fn testing_demultiplex_large() {
-    for j in 0..2{
-        for thread_cnt in 1..4{
-            let read1_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_1.fq.gz"));
-            let read2_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_2.fq.gz"));
-            let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds01/sample_sheet_expected.tsv"));
-            let lane = String::from("L01");
-            let instrument = String::from("instrument_1"); 
-            let run = String::from("20231212"); 
+    for thread_cnt in 1..4{
+        let read1_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_1.fq.gz"));
+        let read2_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_2.fq.gz"));
+        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds01/sample_sheet_expected.tsv"));
+        let lane = String::from("L01");
+        let instrument = String::from("instrument_1"); 
+        let run = String::from("20231212");
+        
             
-                
-            let ouput_dir = String::from("testing_data/output_large/");
-            let original_path = String::from("testing_data/expected/large_ds/");
-            if PathBuf::from(&ouput_dir).exists() {
-                fs::remove_dir_all(&ouput_dir).unwrap();
-            }
-            let command = "target/debug/mgikit";
-            let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
-                                                "-s".to_string(), 
-                                                sample_sheet_file_path.to_string(), 
-                                                "--lane".to_string(), 
-                                                lane.to_string(), 
-                                                "--run".to_string(), 
-                                                run.to_string(), 
-                                                "--instrument".to_string(), 
-                                                instrument.to_string(), 
-                                                "--writing-buffer-size".to_string(), 
-                                                "131072".to_string(), 
-                                                "-o".to_string(),
-                                                ouput_dir.to_string(), 
-                                                "-m".to_string(), 
-                                                format!("{}", 0), 
-                                                "--force".to_string()];
-                        
-            my_args.push("--threads".to_string());
-            my_args.push(thread_cnt.to_string());
-            my_args.push("--validate".to_string());
-            if j == 0{
-                my_args.push("-f".to_string());
-                my_args.push(read1_file_path.to_string());
-                my_args.push("-r".to_string());
-                my_args.push(read2_file_path.to_string()); 
-            }else{
-                my_args.push("-f".to_string());
-                my_args.push(read2_file_path.to_string());
-            }
-            
-    
-            my_args.push("--all-index-error".to_string());                
-            
-            println!("{:?}", my_args);
-    
-            let output = Command::new(command)
-                .args(my_args)
-                .output() // Capture the output of the command.
-                .expect("Failed to execute command");
-            
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
-                let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
-                println!("Command output:\n{} -> {}", meta_info[1], output_str);
-                
-            } else {
-                panic!(
-                    "Command failed with exit code: {}\nError message: {}\nOutput:{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr),
-                    String::from_utf8_lossy(&output.stdout)
-                );
-            }
-            
-            let paths = fs::read_dir(&original_path).unwrap();
-            for path in paths {
-                println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
-                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
-                if format!("{}", path.as_ref().unwrap().path().display()).contains("se-FC01.L01.mgikit"){
-                    continue;
-                }
-
-                if j == 1{
-                    if path.as_ref().unwrap().path().display().to_string().contains("_R1_001"){
-                       continue; 
-                    }
-
-                    if path.as_ref().unwrap().path().display().to_string().contains("sample_stats"){
-                        let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
-                        let digest_original = md5::compute(get_hash(&String::from("testing_data/expected/large_ds/se-FC01.L01.mgikit.sample_stats")));
-                        assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
-                        continue; 
-                    }
-                }
-                
-                if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
-                    if thread_cnt > 1{
-                        continue;
-                    }
-                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+        let ouput_dir = String::from("testing_data/output_large/");
+        let original_path = String::from("testing_data/expected/large_ds/");
+        if PathBuf::from(&ouput_dir).exists() {
+            fs::remove_dir_all(&ouput_dir).unwrap();
+        }
+        let command = "target/debug/mgikit";
+        let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
+                                            "-s".to_string(), 
+                                            sample_sheet_file_path.to_string(), 
+                                            "--lane".to_string(), 
+                                            lane.to_string(), 
+                                            "--run".to_string(), 
+                                            run.to_string(), 
+                                            "--instrument".to_string(), 
+                                            instrument.to_string(), 
+                                            "--writing-buffer-size".to_string(), 
+                                            "131072".to_string(), 
+                                            "-o".to_string(),
+                                            ouput_dir.to_string(), 
+                                            "-m".to_string(), 
+                                            format!("{}", 0), 
+                                            "--force".to_string()];
                     
-                    let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
-                    assert_eq!(crc_new, crc_original);
+        my_args.push("--threads".to_string());
+        my_args.push(thread_cnt.to_string());
+        my_args.push("--validate".to_string());
+
+        my_args.push("-f".to_string());
+        my_args.push(read1_file_path.to_string());
+        my_args.push("-r".to_string());
+        my_args.push(read2_file_path.to_string()); 
     
-                }else{   
-                    let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
-                    let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
-                    assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
-                }
-            }
-    
+        my_args.push("--all-index-error".to_string());                
+        
+        println!("{:?}", my_args);
+
+        let output = Command::new(command)
+            .args(my_args)
+            .output() // Capture the output of the command.
+            .expect("Failed to execute command");
+        
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+            let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+            println!("Command output:\n{} -> {}", meta_info[1], output_str);
             
+        } else {
+            panic!(
+                "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
         }
         
-    }
+        let paths = fs::read_dir(&original_path).unwrap();
+        for path in paths {
+            println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                            format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+            if format!("{}", path.as_ref().unwrap().path().display()).contains("se-FC01.L01.mgikit"){
+                continue;
+            }
+
+            if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                if thread_cnt > 1{
+                    continue;
+                }
+                let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                
+                let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                assert_eq!(crc_new, crc_original);
+
+            }else{   
+                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+            }
+        }       
+    }    
+}
+
+#[test]
+fn testing_demultiplex_large_se() {
+    for thread_cnt in 1..4{
+        let read2_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_2.fq.gz"));
+        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds01/sample_sheet_expected.tsv"));
+        let lane = String::from("L01");
+        let instrument = String::from("instrument_1"); 
+        let run = String::from("20231212"); 
         
+            
+        let ouput_dir = String::from("testing_data/output_large-se/");
+        let original_path = String::from("testing_data/expected/large_ds/");
+        if PathBuf::from(&ouput_dir).exists() {
+            fs::remove_dir_all(&ouput_dir).unwrap();
+        }
+        let command = "target/debug/mgikit";
+        let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
+                                            "-s".to_string(), 
+                                            sample_sheet_file_path.to_string(), 
+                                            "--lane".to_string(), 
+                                            lane.to_string(), 
+                                            "--run".to_string(), 
+                                            run.to_string(), 
+                                            "--instrument".to_string(), 
+                                            instrument.to_string(), 
+                                            "--writing-buffer-size".to_string(), 
+                                            "131072".to_string(), 
+                                            "-o".to_string(),
+                                            ouput_dir.to_string(), 
+                                            "-m".to_string(), 
+                                            format!("{}", 0), 
+                                            "--force".to_string()];
+                    
+        my_args.push("--threads".to_string());
+        my_args.push(thread_cnt.to_string());
+        my_args.push("--validate".to_string());
+
+        my_args.push("-f".to_string());
+        my_args.push(read2_file_path.to_string());
+    
+        
+
+        my_args.push("--all-index-error".to_string());                
+        
+        println!("{:?}", my_args);
+
+        let output = Command::new(command)
+            .args(my_args)
+            .output() // Capture the output of the command.
+            .expect("Failed to execute command");
+        
+        if output.status.success() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+            let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+            println!("Command output:\n{} -> {}", meta_info[1], output_str);
+            
+        } else {
+            panic!(
+                "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+        
+        let paths = fs::read_dir(&original_path).unwrap();
+        for path in paths {
+            if format!("{}", path.as_ref().unwrap().path().display()).contains("se-FC01.L01.mgikit"){
+                continue;
+            }
+            println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                            format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+            
+            if path.as_ref().unwrap().path().display().to_string().contains("_R1_001"){
+                continue; 
+            }
+
+            if path.as_ref().unwrap().path().display().to_string().contains("sample_stats"){
+                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                let digest_original = md5::compute(get_hash(&String::from("testing_data/expected/large_ds/se-FC01.L01.mgikit.sample_stats")));
+                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+                continue; 
+            }
+            
+            if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                if thread_cnt > 1{
+                    continue;
+                }
+                let tmp = &path.as_ref().unwrap().file_name().into_string().unwrap();
+                let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &tmp.replace("R2", "R1")));
+                
+                let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                assert_eq!(crc_new, crc_original);
+
+            }else{   
+                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+            }
+        }
+
+        
+    }    
 }
 
 #[test]

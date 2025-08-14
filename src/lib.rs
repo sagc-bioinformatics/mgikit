@@ -1416,7 +1416,8 @@ fn analyse_fastq(
             run_manager.lane(),
             reformated_sample.sample_index(),
             run_manager.illumina_format(),
-            run_manager.output_dir()
+            run_manager.output_dir(),
+            run_manager.paired_read_input()
         );
         vec![sample, SampleData::minimal_sample(), SampleData::minimal_sample()]
     };
@@ -2281,7 +2282,8 @@ pub fn reformat(reformat_command: &ArgMatches) -> Result<(), Box<dyn Error>> {
             run_manager.lane(),
             reformated_sample.sample_index(),
             run_manager.illumina_format(),
-            run_manager.output_dir()
+            run_manager.output_dir(),
+            run_manager.paired_read_input()
         );
         sample.delete_sample_files();
     }
