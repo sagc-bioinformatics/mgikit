@@ -152,7 +152,7 @@ The input fastq files can be provided to the tool in two ways:
 
 2. Using `-i` or `--input` parameter which refers to the path to the lane subdirectory in the sequencing output directory (or the directory that contains the fastq files if the data is obtained from somewhere else). In this case, the tool will search for the file that ends with `_read_1.fq.gz` and `_read_2.fq.gz` as forward and reverse reads respectively and if no reverse read file is found, the tool considers the run as a single end run. These suffixes can be also customised using the parameters (`--r1-file-suf` and `--r2-file-suf`).
 
-### Sample sheet format and preparation.
+### Sample sheet format and preparation
 
 For the tool to perform demultiplexing, it needs to know the indexes of each sample to match them with the barcodes at the end of the read sequence as well as where to look for each index in the barcode. We refer to the location of the indexes within the barcode by the barcode template. For example
 This information can be provided to the tool in two different ways:
@@ -400,7 +400,7 @@ If either `--writer-threads` or `--reader-threads` is `0` (or not set), The `--t
 
 #### Default Thread Allocation
 
-mgikit will only use the minimim number of requested threads and available CPU core. The default behavoir is: 
+mgikit will only use the minimim number of requested threads and available CPU core. The default behavoir is:
 
 1. If you only have 1 CPU core, all work happens in a single processing thread.
 
@@ -420,12 +420,11 @@ mgikit will only use the minimim number of requested threads and available CPU c
 
 This default configuration showed the best performance in testing datasets.
 
-#### Example:
+#### Example
 
 threads = 8 → 2 reader threads, 6 processing threads.
 
 `reader-threads` = 4 and `writer-threads` = 2 → Uses exactly 4 readers and 2 writer threads; threads is ignored.
-
 
 ### Performance evaluation
 
