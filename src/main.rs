@@ -2,24 +2,24 @@
 #![doc(html_logo_url = "assets/SAGC-logo-hover.png")]
 #![doc(issue_tracker_base_url = "https://github.com/sagc-bioinformatics/mgikit/issues")]
 
-use std::time::Instant;
-use std::str;
 use chrono;
+use clap::{Arg, ArgAction, Command};
+use env_logger::{Builder, Target};
+use log::{error, info, warn, LevelFilter};
 use mgikit::*;
-use termion::terminal_size;
-use clap::{ ArgAction, Command, Arg };
-use log::{ warn, info, error, LevelFilter };
 use std::env;
-use env_logger::{ Builder, Target };
+use std::str;
 use std::str::FromStr;
+use std::time::Instant;
+use termion::terminal_size;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_logo() {
     //let (width, _) = terminal_size().unwrap();
     let (width, _) = match terminal_size() {
-        Ok(value) => { value }
-        Err(_) => { (80, 0) }
+        Ok(value) => value,
+        Err(_) => (80, 0),
     };
     //let width = 80;
     if width > 43 {
@@ -737,9 +737,8 @@ fn main() {
                 initiate_demultiplexing(demultiplex_command);
             }
             Some(("report", report_command)) => {
-                let arg_ouput_dir: &String = report_command
-                    .get_one::<String>("arg_ouput_dir")
-                    .unwrap();
+                let arg_ouput_dir: &String =
+                    report_command.get_one::<String>("arg_ouput_dir").unwrap();
                 let arg_qc_report_path: Vec<String> = report_command
                     .get_many::<String>("arg_qc_report_path")
                     .unwrap()
