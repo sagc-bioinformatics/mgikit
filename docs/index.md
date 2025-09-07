@@ -73,6 +73,21 @@ cd mgikit
 cargo build --release
 ```
 
+You can also install mgikit through conda, as it is available on Bioconda.
+
+```bash
+conda install bioconda::mgikit
+```
+
+Or create a conda environment with mgikit
+
+```bash
+conda create -n mgikit_env bioconda::mgikit
+conda activate mgikit_env
+```
+
+Additionally, Biocontainers has [docker image](https://quay.io/repository/biocontainers/mgikit) and [singularity image](https://depot.galaxyproject.org/singularity/) for mgikit.
+
 ## User Guide Table of Content
 
 {% include section-navigation-tiles.html type="guides" %}
