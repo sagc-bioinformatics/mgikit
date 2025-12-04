@@ -802,7 +802,7 @@ fn demultiplex(
                 panic!("there must be a reader thread here!")
             }
         };
-        if reader_threads == 2 {
+        if reader_threads > 2 || (reader_threads == 2 && run_manager.paired_read_input()) {
             let _ = match reader_handler_secondary {
                 Some(handler) => handler.join().unwrap(),
                 None => {
@@ -1743,7 +1743,7 @@ pub fn initiate_demultiplexing(demultiplex_command: &ArgMatches) {
         *demultiplex_command
             .get_one::<u32>("arg_compression_level")
             .unwrap(),
-        compression_buffer_size - barcode_read_info.read_length() - paired_read_info.read_length(),
+        compression_buffer_size - 2 * barcode_read_info.read_length() - 2 * paired_read_info.read_length(),
         writing_buffer_size,
     );
     let arg_memory: f64 = *demultiplex_command.get_one::<f64>("arg_memory").unwrap();
@@ -1768,7 +1768,7 @@ pub fn initiate_demultiplexing(demultiplex_command: &ArgMatches) {
                 tmp_processing_threads += tmp_reader_threads - 4;
                 tmp_reader_threads = 4;
             } else if tmp_reader_threads == 3 {
-                warn!("Reader threads shoyuld be either 0, 1, 2, or 4! extra threads will be used for processing!");
+                warn!("Reader threads should be either 0, 1, 2, or 4! extra threads will be used for processing!");
                 tmp_reader_threads = 2;
                 tmp_processing_threads += 1;
             }
@@ -2380,7 +2380,7 @@ pub fn reformat(reformat_command: &ArgMatches) -> Result<(), Box<dyn Error>> {
         *reformat_command
             .get_one::<u32>("arg_compression_level")
             .unwrap(),
-        compression_buffer_size - barcode_read_info.read_length() - paired_read_info.read_length(),
+        compression_buffer_size - 2 * barcode_read_info.read_length() - 2 * paired_read_info.read_length(),
         writing_buffer_size,
     );
 

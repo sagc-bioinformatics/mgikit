@@ -161,169 +161,168 @@ fn testing_template() {
 
 #[test]
 fn testing_demultiplex() {
-    for ds_itr_tmp in 1..15{
-        let mut disable_illumina_format = false;
-        let ds_itr_in = match ds_itr_tmp{
-            6 => 1,
-            9 => 8,
-            7 => 1,
-            4 => 3,
-            5 => {disable_illumina_format = true; 1},
-            11 => 1,
-            12 => 2,
-            14 => 2,
-            _ => ds_itr_tmp
-        };
+    for threads_cnt in [1, 2, 3, 4, 5, 8, 10]{
+        for ds_itr_tmp in 1..15{
+                let mut disable_illumina_format = false;
+                let ds_itr_in = match ds_itr_tmp{
+                    6 => 1,
+                    9 => 8,
+                    7 => 1,
+                    4 => 3,
+                    5 => {disable_illumina_format = true; 1},
+                    11 => 1,
+                    12 => 2,
+                    14 => 2,
+                    _ => ds_itr_tmp
+                };
 
-        let ds_itr_ex = match ds_itr_tmp{
-            6 => 1,
-            14 => 12,
-            _ => ds_itr_tmp
-        };
+                let ds_itr_ex = match ds_itr_tmp{
+                    6 => 1,
+                    14 => 12,
+                    _ => ds_itr_tmp
+                };
 
-        let ds_itr_fc = match ds_itr_in{
-            10 => 1,
-            11 => 1,
-            12 => 1,
-            13 => 2,
-            14 => 2,
-            _ => ds_itr_in
-        };
+                let ds_itr_fc = match ds_itr_in{
+                    10 => 1,
+                    11 => 1,
+                    12 => 1,
+                    13 => 2,
+                    14 => 2,
+                    _ => ds_itr_in
+                };
 
-        let input_folder_path = match ds_itr_tmp == 6 {
-            false => String::new(),
-            true => String::from(format!("testing_data/input/ds0{}/L01/", ds_itr_in))
-        };
-        
-        let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_fc));
-        let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_fc));
-        let ext = if ds_itr_tmp == 1 {"csv"} else {"tsv"};
-        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.{ext}", ds_itr_ex));
-        let lane = String::from("L01");
-        let mut instrument = String::from("instrument_1"); 
-        let mut run = String::from("20231212"); 
-        let mut comprehensive_scan = false;
-        
-        if ds_itr_tmp == 5 || ds_itr_tmp == 2 {
-            comprehensive_scan = true;
-        }
-
-        if ds_itr_tmp == 3 || ds_itr_tmp == 4 {
-            instrument = String::from("instrument_3"); 
-            run = String::from("20230727"); 
-        }
-    
-        for allowed_mismatches in 0..5 {
-            
-            let ouput_dir = format!("testing_data/output/ds0{}/out_real-{}/", ds_itr_tmp, allowed_mismatches);
-            if PathBuf::from(&ouput_dir).exists() {
-                fs::remove_dir_all(&ouput_dir).unwrap();
-            }
-            let original_path = format!("testing_data/expected/ds0{}/ds0{}-{}/", ds_itr_ex, ds_itr_ex, allowed_mismatches);
-           
-            let command = "target/debug/mgikit";
-            let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
-                                                "-f".to_string(),
-                                                read1_file_path.to_string(), 
-                                                "-r".to_string(), 
-                                                read2_file_path.to_string(), 
-                                                "-i".to_string(), 
-                                                input_folder_path.to_string(), 
-                                                "-s".to_string(), 
-                                                sample_sheet_file_path.to_string(), 
-                                                "--lane".to_string(), 
-                                                lane.to_string(), 
-                                                "--run".to_string(), 
-                                                run.to_string(), 
-                                                "--instrument".to_string(), 
-                                                instrument.to_string(), 
-                                                "--writing-buffer-size".to_string(), 
-                                                "131072".to_string(), 
-                                                "-o".to_string(),
-                                                ouput_dir.to_string(), 
-                                                "-m".to_string(), 
-                                                format!("{}", allowed_mismatches), 
-                                                "--force".to_string(),
-                                                "-t".to_string(),
-                                                "1".to_string()];
-                        
-            if comprehensive_scan{
-                my_args.push("--comprehensive-scan".to_string());
-            }
-            my_args.push("--validate".to_string());
-            if disable_illumina_format{
-                my_args.push("--disable-illumina".to_string());
-            }
-            if ds_itr_tmp ==  9 {
-                my_args.push("--template".to_string());
-                my_args.push("i78:--8".to_string());
+                let input_folder_path = match ds_itr_tmp == 6 {
+                    false => String::new(),
+                    true => String::from(format!("testing_data/input/ds0{}/L01/", ds_itr_in))
+                };
                 
-            }
-
-            if ds_itr_tmp <  11{
-                my_args.push("--all-index-error".to_string());                
-            }
-            println!("{:?}", &my_args);
-
-
-            let output = Command::new(command)
-                .args(my_args)
-                .output() // Capture the output of the command.
-                .expect("Failed to execute command");
-            
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
-                let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
-                println!("Command output:\n{} -> {}", meta_info[1], output_str);
+                let read1_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_1.fq.gz", ds_itr_in, ds_itr_fc));
+                let read2_file_path : String = String::from(format!("testing_data/input/ds0{}/L01/FC0{}_L01_read_2.fq.gz", ds_itr_in, ds_itr_fc));
+                let ext = if ds_itr_tmp == 1 {"csv"} else {"tsv"};
+                let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds0{}/sample_sheet_expected.{ext}", ds_itr_ex));
+                let lane = String::from("L01");
+                let mut instrument = String::from("instrument_1"); 
+                let mut run = String::from("20231212"); 
+                let mut comprehensive_scan = false;
                 
-            } else {
-                panic!(
-                    "Command failed with exit code: {}\nError message: {}\nOutput:{}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr),
-                    String::from_utf8_lossy(&output.stdout)
-                );
-            }
-            
-            let paths = fs::read_dir(&original_path).unwrap();
-            for path in paths {
-                println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
-                                                format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
-                
-                if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
-                    
-                    let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
-                    
-                    let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
-                    assert_eq!(crc_new, crc_original);
-
-                }else{
-                    
-                    let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
-                    let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
-                    assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
-                
+                if ds_itr_tmp == 5 || ds_itr_tmp == 2 {
+                    comprehensive_scan = true;
                 }
 
+                if ds_itr_tmp == 3 || ds_itr_tmp == 4 {
+                    instrument = String::from("instrument_3"); 
+                    run = String::from("20230727"); 
+                }
+            
+                for allowed_mismatches in 0..5 {
+                    
+                    let ouput_dir = format!("testing_data/output/ds0{}/out_real-{}/", ds_itr_tmp, allowed_mismatches);
+                    if PathBuf::from(&ouput_dir).exists() {
+                        fs::remove_dir_all(&ouput_dir).unwrap();
+                    }
+                    let original_path = format!("testing_data/expected/ds0{}/ds0{}-{}/", ds_itr_ex, ds_itr_ex, allowed_mismatches);
                 
-        
-            }
+                    let command = "target/debug/mgikit";
+                    let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
+                                                        "-f".to_string(),
+                                                        read1_file_path.to_string(), 
+                                                        "-r".to_string(), 
+                                                        read2_file_path.to_string(), 
+                                                        "-i".to_string(), 
+                                                        input_folder_path.to_string(), 
+                                                        "-s".to_string(), 
+                                                        sample_sheet_file_path.to_string(), 
+                                                        "--lane".to_string(), 
+                                                        lane.to_string(), 
+                                                        "--run".to_string(), 
+                                                        run.to_string(), 
+                                                        "--instrument".to_string(), 
+                                                        instrument.to_string(), 
+                                                        "--writing-buffer-size".to_string(), 
+                                                        "131072".to_string(), 
+                                                        "-o".to_string(),
+                                                        ouput_dir.to_string(), 
+                                                        "-m".to_string(), 
+                                                        format!("{}", allowed_mismatches), 
+                                                        "--force".to_string(),
+                                                        "-t".to_string(),
+                                                        threads_cnt.to_string()];
+                                
+                    if comprehensive_scan{
+                        my_args.push("--comprehensive-scan".to_string());
+                    }
+                    my_args.push("--validate".to_string());
+                    if disable_illumina_format{
+                        my_args.push("--disable-illumina".to_string());
+                    }
+                    if ds_itr_tmp ==  9 {
+                        my_args.push("--template".to_string());
+                        my_args.push("i78:--8".to_string());
+                        
+                    }
 
-            println!("Checking count of files");
-            assert_eq!(count_files_recursive(&ouput_dir),
-                       count_files_recursive(&original_path));
+                    if ds_itr_tmp <  11{
+                        my_args.push("--all-index-error".to_string());                
+                    }
+                    println!("{:?}", &my_args);
 
-            if [7, 8, 9, 10].contains(&ds_itr_tmp){
-                break;
-            }
-            if ds_itr_tmp > 10 && allowed_mismatches == 2{
-                break;
+
+                    let output = Command::new(command)
+                        .args(my_args)
+                        .output() // Capture the output of the command.
+                        .expect("Failed to execute command");
+                    
+                    if output.status.success() {
+                        let output_str = String::from_utf8_lossy(&output.stdout);
+                        let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+                        let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+                        println!("Command output:\n{} -> {}", meta_info[1], output_str);
+                        
+                    } else {
+                        panic!(
+                            "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                            output.status,
+                            String::from_utf8_lossy(&output.stderr),
+                            String::from_utf8_lossy(&output.stdout)
+                        );
+                    }
+                    
+                    let paths = fs::read_dir(&original_path).unwrap();
+                    for path in paths {
+                        println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                                        format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                        
+                        if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                            
+                            let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                            
+                            let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                            assert_eq!(crc_new, crc_original);
+
+                        }else{
+                            
+                            let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                            let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                            assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+                        
+                        }                
+                    }
+
+                    println!("Checking count of files");
+                    assert_eq!(count_files_recursive(&ouput_dir),
+                            count_files_recursive(&original_path));
+
+                    if [7, 8, 9, 10].contains(&ds_itr_tmp){
+                        break;
+                    }
+                    if ds_itr_tmp > 10 && allowed_mismatches == 2{
+                        break;
+                    }
+                    
+                }
             }
             
-        }
     }
-      
 }
 
 #[test]
@@ -966,95 +965,103 @@ fn testing_demultiplex_threads() {
 
 #[test]
 fn testing_demultiplex_large() {
-    for thread_cnt in 1..4{
-        let read1_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_1.fq.gz"));
-        let read2_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_2.fq.gz"));
-        let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds01/sample_sheet_expected.tsv"));
-        let lane = String::from("L01");
-        let instrument = String::from("instrument_1"); 
-        let run = String::from("20231212");
-        
-            
-        let ouput_dir = String::from("testing_data/output_large/");
-        let original_path = String::from("testing_data/expected/large_ds/");
-        if PathBuf::from(&ouput_dir).exists() {
-            fs::remove_dir_all(&ouput_dir).unwrap();
-        }
-        let command = "target/debug/mgikit";
-        let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
-                                            "-s".to_string(), 
-                                            sample_sheet_file_path.to_string(), 
-                                            "--lane".to_string(), 
-                                            lane.to_string(), 
-                                            "--run".to_string(), 
-                                            run.to_string(), 
-                                            "--instrument".to_string(), 
-                                            instrument.to_string(), 
-                                            "--writing-buffer-size".to_string(), 
-                                            "131072".to_string(), 
-                                            "-o".to_string(),
-                                            ouput_dir.to_string(), 
-                                            "-m".to_string(), 
-                                            format!("{}", 0), 
-                                            "--force".to_string()];
-                    
-        my_args.push("--threads".to_string());
-        my_args.push(thread_cnt.to_string());
-        my_args.push("--validate".to_string());
-
-        my_args.push("-f".to_string());
-        my_args.push(read1_file_path.to_string());
-        my_args.push("-r".to_string());
-        my_args.push(read2_file_path.to_string()); 
-    
-        my_args.push("--all-index-error".to_string());                
-        
-        println!("{:?}", my_args);
-
-        let output = Command::new(command)
-            .args(my_args)
-            .output() // Capture the output of the command.
-            .expect("Failed to execute command");
-        
-        if output.status.success() {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
-            let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
-            println!("Command output:\n{} -> {}", meta_info[1], output_str);
-            
-        } else {
-            panic!(
-                "Command failed with exit code: {}\nError message: {}\nOutput:{}",
-                output.status,
-                String::from_utf8_lossy(&output.stderr),
-                String::from_utf8_lossy(&output.stdout)
-            );
-        }
-        
-        let paths = fs::read_dir(&original_path).unwrap();
-        for path in paths {
-            println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
-                                            format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
-            if format!("{}", path.as_ref().unwrap().path().display()).contains("se-FC01.L01.mgikit"){
-                continue;
-            }
-
-            if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
-                if thread_cnt > 1{
-                    continue;
-                }
-                let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+    for se in 0..2{
+        for thread_cnt in [1, 2, 3, 4, 5, 8, 10]{
+                let read1_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_1.fq.gz"));
+                let read2_file_path : String = String::from(format!("testing_data/input/large_ds/ZFC01_L01_read_2.fq.gz"));
+                let sample_sheet_file_path : String = String::from(format!("testing_data/expected/ds01/sample_sheet_expected.tsv"));
+                let lane = String::from("L01");
+                let instrument = String::from("instrument_1"); 
+                let run = String::from("20231212");
                 
-                let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
-                assert_eq!(crc_new, crc_original);
+                    
+                let ouput_dir = String::from("testing_data/output_large/");
+                let original_path = String::from("testing_data/expected/large_ds/");
+                if PathBuf::from(&ouput_dir).exists() {
+                    fs::remove_dir_all(&ouput_dir).unwrap();
+                }
+                let command = "target/debug/mgikit";
+                let mut my_args: Vec<String> = vec!["demultiplex".to_string(),
+                                                    "-s".to_string(), 
+                                                    sample_sheet_file_path.to_string(), 
+                                                    "--lane".to_string(), 
+                                                    lane.to_string(), 
+                                                    "--run".to_string(), 
+                                                    run.to_string(), 
+                                                    "--instrument".to_string(), 
+                                                    instrument.to_string(), 
+                                                    "--writing-buffer-size".to_string(), 
+                                                    "131072".to_string(), 
+                                                    "-o".to_string(),
+                                                    ouput_dir.to_string(), 
+                                                    "-m".to_string(), 
+                                                    format!("{}", 0), 
+                                                    "--force".to_string()];
+                            
+                my_args.push("--threads".to_string());
+                my_args.push(thread_cnt.to_string());
+                my_args.push("--validate".to_string());
 
-            }else{   
-                let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
-                let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
-                assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+                my_args.push("-f".to_string());
+                if se == 0{
+                    my_args.push(read1_file_path.to_string());
+                    my_args.push("-r".to_string());
+                    my_args.push(read2_file_path.to_string());     
+                }else{
+                    my_args.push(read2_file_path.to_string());
+                }
+                
+                my_args.push("--all-index-error".to_string());                
+                
+                println!("{:?}", my_args);
+
+                let output = Command::new(command)
+                    .args(my_args)
+                    .output() // Capture the output of the command.
+                    .expect("Failed to execute command");
+                
+                if output.status.success() {
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    let lines: Vec<String> = output_str.split("\n").map(|it| it.to_string()).collect();
+                    let meta_info: Vec<String> = lines[1].split(" ").map(|it| it.to_string()).collect();
+                    println!("Command output:\n{} -> {}", meta_info[1], output_str);
+                    
+                } else {
+                    panic!(
+                        "Command failed with exit code: {}\nError message: {}\nOutput:{}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr),
+                        String::from_utf8_lossy(&output.stdout)
+                    );
+                }
+                if se == 0{
+                    let paths = fs::read_dir(&original_path).unwrap();
+                    for path in paths {
+                        println!("Checking: {} and {}", path.as_ref().unwrap().path().display(),
+                                                        format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                        if format!("{}", path.as_ref().unwrap().path().display()).contains("se-FC01.L01.mgikit"){
+                            continue;
+                        }
+
+                        if format!("{}", &path.as_ref().unwrap().path().display()).ends_with(".gz"){
+                            if thread_cnt > 1{
+                                continue;
+                            }
+                            let crc_new = get_gzip_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap()));
+                            
+                            let crc_original = get_gzip_hash(&format!("{}", &path.unwrap().path().display()));
+                            assert_eq!(crc_new, crc_original);
+
+                        }else{   
+                            let digest_new = md5::compute(get_hash(&format!("{}{}", ouput_dir, &path.as_ref().unwrap().file_name().to_str().unwrap())));
+                            let digest_original = md5::compute(get_hash(&format!("{}", &path.unwrap().path().display())));
+                            assert_eq!(format!("{:x}", digest_new), format!("{:x}", digest_original));
+                        }
+                    }       
+                }
+                
             }
-        }       
-    }    
+    }
 }
 
 #[test]
@@ -1165,7 +1172,7 @@ fn testing_demultiplex_large_se() {
 
 #[test]
 fn testing_single_end() {
-    for thread in 1..2{    
+    for thread in 1..6{    
         for ds_itr_tmp in 1..15{
             let mut disable_illumina_format = false;
             let ds_itr_in = match ds_itr_tmp{
