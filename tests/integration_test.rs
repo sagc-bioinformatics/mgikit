@@ -261,8 +261,8 @@ fn testing_demultiplex() {
                         
                     }
 
-                    if ds_itr_tmp <  11{
-                        my_args.push("--all-index-error".to_string());                
+                    if ds_itr_tmp >=  11{
+                        my_args.push("--per-index-error".to_string());                
                     }
                     println!("{:?}", &my_args);
 
@@ -360,6 +360,7 @@ fn testing_demultiplex_not_mgi_input() {
         my_args.push("--disable-illumina".to_string());
         my_args.push("--not-mgi".to_string());                
         my_args.push("--validate".to_string());
+        my_args.push("--per-index-error".to_string());
         println!("{:?}", &my_args);
 
         let output = Command::new(command)
@@ -903,8 +904,8 @@ fn testing_demultiplex_threads() {
                 
             }
             my_args.push("--validate".to_string());
-            if ds_itr_tmp <  11{
-                my_args.push("--all-index-error".to_string());                
+            if ds_itr_tmp >=  11{
+                my_args.push("--per-index-error".to_string());                
             }
             println!("{:?}", my_args);
 
@@ -1011,7 +1012,7 @@ fn testing_demultiplex_large() {
                     my_args.push(read2_file_path.to_string());
                 }
                 
-                my_args.push("--all-index-error".to_string());                
+                //my_args.push("--all-index-error".to_string());                
                 
                 println!("{:?}", my_args);
 
@@ -1106,7 +1107,7 @@ fn testing_demultiplex_large_se() {
     
         
 
-        my_args.push("--all-index-error".to_string());                
+        //my_args.push("--all-index-error".to_string());                
         
         println!("{:?}", my_args);
 
@@ -1264,8 +1265,8 @@ fn testing_single_end() {
                 }
                 my_args.push("--validate".to_string());
 
-                if ds_itr_tmp <  11{
-                    my_args.push("--all-index-error".to_string());                
+                if ds_itr_tmp >=  11{
+                    my_args.push("--per-index-error".to_string());                
                 }
                 
                 println!("{:?}", &my_args);
@@ -1396,8 +1397,8 @@ fn testing_mgi_full_header() {
             my_args.push("--disable-illumina".to_string());
             my_args.push("--mgi-full-header".to_string());
             
-            if ds_itr_tmp <  11{
-                my_args.push("--all-index-error".to_string());                
+            if ds_itr_tmp >= 11{
+                my_args.push("--per-index-error".to_string());                
             }
             my_args.push("--validate".to_string());
             println!("{:?}", &my_args);

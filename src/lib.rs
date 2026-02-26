@@ -1810,8 +1810,8 @@ pub fn initiate_demultiplexing(demultiplex_command: &ArgMatches) {
     info!("Reporting level is: {}", arg_report_level);
     //let arg_compression_level: &u32 = demultiplex_command.get_one::<u32>("arg_compression_level").unwrap();
     //let arg_compression_buffer_size:  &usize = demultiplex_command.get_one::<usize>("arg_compression_buffer_size").unwrap();
-    let arg_all_index_error: &bool = demultiplex_command
-        .get_one::<bool>("arg_all_index_error")
+    let arg_all_index_error: &bool = & ! demultiplex_command
+        .get_one::<bool>("arg_per_index_error")
         .unwrap();
 
     match demultiplex(

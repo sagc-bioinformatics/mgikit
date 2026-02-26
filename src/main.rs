@@ -337,12 +337,12 @@ fn main() {
                             )
                     )
                     .arg(
-                        Arg::new("arg_all_index_error")
-                            .long("all-index-error")
+                        Arg::new("arg_per_index_error")
+                            .long("per-index-error")
                             .action(ArgAction::SetTrue)
                             .default_value("false")
                             .help(
-                                "By default, the allowed mismatches `-m or --mismatches` are considered to be per index. This flag will make it for the total mismatches across all indices."
+                                "By default, the allowed mismatches `-m or --mismatches` are considered for both indexes. This flag will allow the mismatches per each index."
                             )
                     )
                     .arg(

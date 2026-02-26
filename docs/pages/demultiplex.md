@@ -127,7 +127,7 @@ as well as some summary reports that can be visualised through the MultiQC tool 
 
 - **`--ignore-undetermined`**: By default, the tool will stop if many reads were undetermined. using this parameter, will make the tool give a warning one this issue but keep demultiplexing.
 
-- **`--all-index-error`**: By default, the allowed mismatches `-m or --mismatches` are considered to be per index. This flag will make it for the total mismatches across all indices.
+- **`--per-index-error`**: By default, the allowed mismatches `-m or --mismatches` are considered for both indexes. This flag will allow the mismatches per each index.
 
 - **`--memory`**: The requested maximum memory to be used (in giga byte). Check the documentation for memory optimisation options. Default is 0 then the tool will use the available memory on the machine.
 
